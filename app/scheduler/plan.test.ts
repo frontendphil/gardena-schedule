@@ -8,6 +8,7 @@ import {
   displayName,
   getNextOccurrence,
   isDue,
+  parallelViolations,
   resolveMoistureTarget,
   shouldSkipForMoisture,
 } from "./plan"
@@ -55,6 +56,7 @@ const step = (
   valveId,
   durationMinutes,
   position,
+  startsWithPrevious: false,
 })
 
 describe("timezone handling", () => {
@@ -171,6 +173,122 @@ describe("buildPlan", () => {
 
     expect(plan.steps.map((s) => s.valve.id)).toEqual(["a:1", "a:3"])
     expect(plan.totalMinutes).toBe(25)
+  })
+})
+
+describe("parallel groups", () => {
+  const valves = new Map([
+    ["a:1", valve("a:1")],
+    ["a:2", valve("a:2")],
+    ["a:3", valve("a:3")],
+    ["b:1", valve("b:1")],
+  ])
+
+  const parallel = (
+    id: number,
+    valveId: string,
+    minutes: number,
+    position: number
+  ): ScheduleStep => ({
+    ...step(id, valveId, minutes, position),
+    startsWithPrevious: true,
+  })
+
+  it("starts a grouped step at the same time as the one before it", () => {
+    const plan = buildPlan(
+      schedule(),
+      [
+        step(1, "a:1", 15, 0),
+        parallel(2, "b:1", 20, 1),
+        step(3, "a:2", 10, 2),
+      ],
+      valves,
+      "2026-07-15",
+      TZ
+    )
+
+    expect(plan.steps.map((s) => formatZonedTime(s.startsAt, TZ))).toEqual([
+      "06:00",
+      "06:00", // parallel with the first
+      "06:20", // after the group's longest member, not the sum
+    ])
+  })
+
+  it("makes a group last as long as its longest member", () => {
+    const plan = buildPlan(
+      schedule(),
+      [step(1, "a:1", 15, 0), parallel(2, "b:1", 25, 1)],
+      valves,
+      "2026-07-15",
+      TZ
+    )
+
+    expect(plan.groups).toHaveLength(1)
+    expect(plan.groups[0].durationMinutes).toBe(25)
+    expect(plan.totalMinutes).toBe(25)
+    expect(formatZonedTime(plan.endsAt, TZ)).toBe("06:25")
+  })
+
+  it("treats a leading startsWithPrevious flag as the start of the run", () => {
+    const plan = buildPlan(
+      schedule(),
+      [parallel(1, "a:1", 15, 0), step(2, "a:2", 10, 1)],
+      valves,
+      "2026-07-15",
+      TZ
+    )
+
+    expect(plan.groups).toHaveLength(2)
+    expect(plan.totalMinutes).toBe(25)
+  })
+
+  it("does not orphan followers when the leader's valve disappears", () => {
+    const plan = buildPlan(
+      schedule(),
+      [step(1, "gone:9", 15, 0), parallel(2, "a:1", 20, 1)],
+      valves,
+      "2026-07-15",
+      TZ
+    )
+
+    expect(plan.steps).toHaveLength(1)
+    expect(plan.groups).toHaveLength(1)
+    expect(formatZonedTime(plan.steps[0].startsAt, TZ)).toBe("06:00")
+  })
+
+  it("allows two valves per controller but flags a third", () => {
+    const ok = [
+      { valveId: "a:1", startsWithPrevious: false },
+      { valveId: "a:2", startsWithPrevious: true },
+    ]
+    expect(parallelViolations(ok)).toEqual([])
+
+    const tooMany = [...ok, { valveId: "a:3", startsWithPrevious: true }]
+    expect(parallelViolations(tooMany)).toEqual([
+      { group: 0, controller: "a", count: 3 },
+    ])
+  })
+
+  it("counts the limit per controller, not per group", () => {
+    // Two on controller `a` and two on controller `b`, all at once — fine.
+    expect(
+      parallelViolations([
+        { valveId: "a:1", startsWithPrevious: false },
+        { valveId: "a:2", startsWithPrevious: true },
+        { valveId: "b:1", startsWithPrevious: true },
+        { valveId: "b:2", startsWithPrevious: true },
+      ])
+    ).toEqual([])
+  })
+
+  it("does not flag valves that merely follow each other sequentially", () => {
+    expect(
+      parallelViolations([
+        { valveId: "a:1", startsWithPrevious: false },
+        { valveId: "a:2", startsWithPrevious: false },
+        { valveId: "a:3", startsWithPrevious: false },
+      ])
+    ).toEqual([])
   })
 })
 

@@ -85,19 +85,17 @@ export const loader = async () => {
       const { hour, minute } = parseTimeOfDay(schedule.startTime)
       const startMinutes = hour * 60 + minute
 
-      let offset = 0
-      const steps = plan.steps.map((planned) => {
-        const from = startMinutes + offset
-        offset += planned.step.durationMinutes
-
-        return {
-          name: displayName(planned.valve),
-          startMinutes: from,
-          endMinutes: startMinutes + offset,
-          durationMinutes: planned.step.durationMinutes,
-          skipped: false,
-        }
-      })
+      // Offsets come from the plan's groups, so parallel sprinklers share a
+      // start and the row's length reflects elapsed time, not summed duration.
+      const steps = plan.steps.map((planned) => ({
+        name: displayName(planned.valve),
+        startMinutes: startMinutes + planned.offsetMinutes,
+        endMinutes:
+          startMinutes + planned.offsetMinutes + planned.step.durationMinutes,
+        durationMinutes: planned.step.durationMinutes,
+        group: planned.group,
+        skipped: false,
+      }))
 
       return {
         id: schedule.id,

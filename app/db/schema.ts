@@ -86,6 +86,14 @@ export const scheduleSteps = sqliteTable("schedule_steps", {
     .references(() => valves.id, { onDelete: "cascade" }),
   durationMinutes: integer("duration_minutes").notNull(),
   position: integer("position").notNull(),
+  /**
+   * Starts at the same moment as the step before it instead of after it,
+   * forming a parallel group. A Gardena controller can hold at most two of its
+   * valves open at once, which `MAX_PARALLEL_PER_CONTROLLER` enforces.
+   */
+  startsWithPrevious: integer("starts_with_previous", { mode: "boolean" })
+    .notNull()
+    .default(false),
 })
 
 export const RUN_STATUS = [

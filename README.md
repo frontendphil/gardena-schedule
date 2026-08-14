@@ -44,6 +44,7 @@ shows the live request count for the running process.
 | | |
 |---|---|
 | **Schedules** | An ordered list of sprinklers with a duration each. Drag to reorder or change a duration, and every clock time updates live. |
+| **Parallel sprinklers** | Any sprinkler can be set to start *with the previous* one instead of after it. The group lasts as long as its longest member. A Gardena controller can only hold **two** of its valves open at once, so the editor refuses a third and names the sprinklers that clash — valves on different controllers are counted separately, so 2 + 2 is fine. |
 | **Today at a glance** | The schedules page plots every schedule running today on a shared clock, and warns when two overlap — only one run executes at a time, so the second would be skipped rather than queued. |
 | **Sprinklers, not controllers** | The Gardena `DEVICE` / `VALVE_SET` layer is never surfaced. Sprinklers are a flat alphabetical list you can rename and switch off; order only matters inside a schedule. |
 | **Unused valves** | Gardena reports every valve port as healthy whether or not anything is wired to it, so unused ports are switched off on the Sprinklers page and disappear from schedules and the dashboard. Ports still carrying the default `Valve N` name start switched off; that guess only sets the initial position of the toggle. |
@@ -80,7 +81,8 @@ authenticating proxy in front of it.
 ## Development
 
 ```bash
-pnpm test        # planner unit tests (timezone, DST, recurrence, moisture gate)
+pnpm test        # planner unit tests (timezone, DST, recurrence, moisture gate,
+                 # parallel grouping and the per-controller valve limit)
 pnpm typecheck
 pnpm db:generate # regenerate migrations after editing app/db/schema.ts
 ```

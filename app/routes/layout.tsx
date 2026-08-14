@@ -5,6 +5,7 @@ import {
   Outlet,
   href,
   useLocation,
+  useNavigation,
   useRevalidator,
   useSubmit,
 } from "react-router"
@@ -51,6 +52,10 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
   const location = useLocation()
   const revalidator = useRevalidator()
   const submit = useSubmit()
+  const navigation = useNavigation()
+
+  // Background revalidation must not flash the bar — only real user actions.
+  const busy = navigation.state !== "idle"
 
   // The socket pushes valve state to the server, not the browser. Polling the
   // loader keeps the UI live; it costs nothing against the Gardena quota because
@@ -65,6 +70,18 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-6 p-4 sm:p-6">
+      {/* Every navigation and form post is covered by this, so no action can
+          look like it did nothing while the server works. */}
+      {busy && (
+        <div
+          role="progressbar"
+          aria-label="Working"
+          className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-emerald-600/20"
+        >
+          <div className="h-full w-1/3 animate-[tl-progress_1.1s_ease-in-out_infinite] bg-emerald-600" />
+        </div>
+      )}
+      <style>{`@keyframes tl-progress{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}`}</style>
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold tracking-tight">Garden</h1>

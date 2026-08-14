@@ -11,11 +11,34 @@ import {
   zonedTimeToUtc,
 } from "./time"
 
+/**
+ * A Gardena controller can hold at most two of its valves open simultaneously.
+ * Valves on *different* controllers are independent, so the limit is counted per
+ * controller rather than per group.
+ */
+export const MAX_PARALLEL_PER_CONTROLLER = 2
+
+/** The controller a valve hangs off. Valve ids are `<deviceId>:<port>`. */
+export const controllerOf = (valveId: string) => valveId.split(":")[0]
+
 export type PlannedStep = {
   step: ScheduleStep
   valve: ValveRow
   /** Minutes after the schedule's start time, assuming nothing gets skipped. */
   offsetMinutes: number
+  startsAt: Date
+  endsAt: Date
+  /** Index of the parallel group this step belongs to. */
+  group: number
+}
+
+/** Steps that open together. A group of one is the ordinary sequential case. */
+export type PlannedGroup = {
+  index: number
+  steps: PlannedStep[]
+  offsetMinutes: number
+  /** The group occupies the longest of its members' durations. */
+  durationMinutes: number
   startsAt: Date
   endsAt: Date
 }
@@ -27,6 +50,51 @@ export type Plan = {
   endsAt: Date
   totalMinutes: number
   steps: PlannedStep[]
+  groups: PlannedGroup[]
+}
+
+/**
+ * Splits an ordered step list into parallel groups. A step marked
+ * `startsWithPrevious` joins the group being built; anything else opens a new
+ * one. The first step always starts a group, whatever its flag says.
+ */
+export const groupSteps = <T extends { startsWithPrevious: boolean }>(
+  steps: T[]
+): T[][] =>
+  steps.reduce<T[][]>((groups, step, index) => {
+    if (index === 0 || !step.startsWithPrevious) return [...groups, [step]]
+
+    groups[groups.length - 1].push(step)
+    return groups
+  }, [])
+
+/**
+ * Controllers asked to open more valves at once than they can manage.
+ *
+ * Returned rather than thrown so the editor can show the problem inline while
+ * still rendering the schedule.
+ */
+export const parallelViolations = (
+  steps: Array<{ valveId: string; startsWithPrevious: boolean }>
+) => {
+  const violations: Array<{ group: number; controller: string; count: number }> = []
+
+  groupSteps(steps).forEach((group, index) => {
+    const perController = new Map<string, number>()
+
+    for (const step of group) {
+      const controller = controllerOf(step.valveId)
+      perController.set(controller, (perController.get(controller) ?? 0) + 1)
+    }
+
+    for (const [controller, count] of perController) {
+      if (count > MAX_PARALLEL_PER_CONTROLLER) {
+        violations.push({ group: index, controller, count })
+      }
+    }
+  })
+
+  return violations
 }
 
 export const displayName = (valve: ValveRow) => valve.displayName ?? valve.apiName
@@ -104,33 +172,51 @@ export const buildPlan = (
 ): Plan => {
   const startsAt = getStartInstant(schedule, scheduledDate, timeZone)
 
-  const ordered = [...steps].sort((a, b) => a.position - b.position)
+  const ordered = [...steps]
+    .sort((a, b) => a.position - b.position)
+    // A step whose valve vanished from the account is dropped rather than
+    // throwing — the schedule as a whole must stay runnable. Dropping happens
+    // before grouping so a removed leader does not orphan its followers.
+    .filter((step) => valvesById.has(step.valveId))
 
   let offsetMinutes = 0
   const planned: PlannedStep[] = []
+  const groups: PlannedGroup[] = []
 
-  for (const step of ordered) {
-    const valve = valvesById.get(step.valveId)
+  groupSteps(ordered).forEach((members, index) => {
+    const groupStart = new Date(startsAt.getTime() + offsetMinutes * 60_000)
 
-    // A step whose valve vanished from the account is dropped from the plan
-    // rather than throwing — the schedule as a whole must stay runnable.
-    if (valve == null) continue
-
-    const stepStart = new Date(startsAt.getTime() + offsetMinutes * 60_000)
-    const stepEnd = new Date(
-      stepStart.getTime() + step.durationMinutes * 60_000
+    // Parallel members start together, so the group lasts as long as its
+    // longest member rather than the sum.
+    const durationMinutes = Math.max(
+      ...members.map((step) => step.durationMinutes)
     )
 
-    planned.push({
-      step,
-      valve,
-      offsetMinutes,
-      startsAt: stepStart,
-      endsAt: stepEnd,
+    const groupSteps: PlannedStep[] = members.map((step) => {
+      const entry = {
+        step,
+        valve: valvesById.get(step.valveId)!,
+        offsetMinutes,
+        startsAt: groupStart,
+        endsAt: new Date(groupStart.getTime() + step.durationMinutes * 60_000),
+        group: index,
+      }
+
+      planned.push(entry)
+      return entry
     })
 
-    offsetMinutes += step.durationMinutes
-  }
+    groups.push({
+      index,
+      steps: groupSteps,
+      offsetMinutes,
+      durationMinutes,
+      startsAt: groupStart,
+      endsAt: new Date(groupStart.getTime() + durationMinutes * 60_000),
+    })
+
+    offsetMinutes += durationMinutes
+  })
 
   return {
     schedule,
@@ -139,6 +225,7 @@ export const buildPlan = (
     endsAt: new Date(startsAt.getTime() + offsetMinutes * 60_000),
     totalMinutes: offsetMinutes,
     steps: planned,
+    groups,
   }
 }
 

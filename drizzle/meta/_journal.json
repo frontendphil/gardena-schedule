@@ -15,6 +15,13 @@
       "when": 1786715377002,
       "tag": "0001_keen_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786721694382,
+      "tag": "0002_bent_zuras",
+      "breakpoints": true
     }
   ]
 }

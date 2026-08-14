@@ -125,23 +125,41 @@ const executeRun = async (
     .returning()
     .all()
 
+  // Run-step rows are keyed by the planned step they came from, so a group can
+  // find its own rows without relying on array positions lining up.
+  const runStepByPlan = new Map(
+    plan.steps.map((planned, index) => [planned.step.id, createdSteps[index]])
+  )
+
   let aborted = false
 
-  for (const [index, planned] of plan.steps.entries()) {
-    const runStep = createdSteps[index]
+  /**
+   * Groups execute one after another; the valves *within* a group open together
+   * and the group lasts as long as its longest member. A group of one is the
+   * ordinary sequential case, so there is only this one path.
+   */
+  for (const group of plan.groups) {
+    const rows = group.steps.map((planned) => ({
+      planned,
+      runStep: runStepByPlan.get(planned.step.id)!,
+    }))
 
     if (signal.aborted) {
-      finishStep(runStep.id, "skipped_master_off", "Run stopped")
+      for (const { runStep } of rows) {
+        finishStep(runStep.id, "skipped_master_off", "Run stopped")
+      }
       aborted = true
       continue
     }
 
-    // Re-read on every step: the master switch or the schedule may have been
-    // toggled while an earlier valve was watering.
+    // Re-read for every group: the master switch or the schedule may have been
+    // toggled while an earlier group was watering.
     const current = getSettings()
 
     if (!current.masterEnabled) {
-      finishStep(runStep.id, "skipped_master_off", "All schedules are off")
+      for (const { runStep } of rows) {
+        finishStep(runStep.id, "skipped_master_off", "All schedules are off")
+      }
       aborted = true
       continue
     }
@@ -153,81 +171,113 @@ const executeRun = async (
       .get()
 
     if (freshSchedule == null || !freshSchedule.enabled) {
-      finishStep(runStep.id, "skipped_schedule_off", "Schedule was disabled")
+      for (const { runStep } of rows) {
+        finishStep(runStep.id, "skipped_schedule_off", "Schedule was disabled")
+      }
       aborted = true
       continue
     }
 
-    const valveRow =
-      db.select().from(valvesTable).where(eq(valvesTable.id, planned.valve.id)).get() ??
-      planned.valve
-
-    const apiValve = getValves().find((valve) => valve.id === planned.valve.id)
-
-    if (apiValve == null || !apiValve.connected) {
-      finishStep(runStep.id, "skipped_unavailable", "Valve is not reachable")
-      continue
-    }
-
-    // A fresh reading per step, so a long run reacts to the soil as it goes.
+    // A fresh reading per group, so a long run reacts to the soil as it goes.
     const sensor = getSensor(current.sensorId)
     const reading = sensor?.soilHumidity ?? null
-    const target = valveRow.moistureTarget ?? current.globalMoistureTarget
 
-    if (
-      shouldSkipForMoisture({
-        valve: valveRow,
-        globalTarget: current.globalMoistureTarget,
-        sensorGateEnabled: current.sensorGateEnabled,
-        reading,
-      })
-    ) {
-      db.update(runSteps)
-        .set({
-          status: "skipped_moisture",
-          detail: `Soil at ${reading}%, target ${target}%`,
-          moistureReading: reading,
-          moistureTarget: target,
-          finishedAt: new Date(),
+    const started = (
+      await Promise.all(
+        rows.map(async ({ planned, runStep }) => {
+          const valveRow =
+            db
+              .select()
+              .from(valvesTable)
+              .where(eq(valvesTable.id, planned.valve.id))
+              .get() ?? planned.valve
+
+          const apiValve = getValves().find(
+            (valve) => valve.id === planned.valve.id
+          )
+
+          if (apiValve == null || !apiValve.connected) {
+            finishStep(runStep.id, "skipped_unavailable", "Valve is not reachable")
+            return null
+          }
+
+          const target = valveRow.moistureTarget ?? current.globalMoistureTarget
+
+          if (
+            shouldSkipForMoisture({
+              valve: valveRow,
+              globalTarget: current.globalMoistureTarget,
+              sensorGateEnabled: current.sensorGateEnabled,
+              reading,
+            })
+          ) {
+            db.update(runSteps)
+              .set({
+                status: "skipped_moisture",
+                detail: `Soil at ${reading}%, target ${target}%`,
+                moistureReading: reading,
+                moistureTarget: target,
+                finishedAt: new Date(),
+              })
+              .where(eq(runSteps.id, runStep.id))
+              .run()
+
+            return null
+          }
+
+          db.update(runSteps)
+            .set({
+              status: "running",
+              startedAt: new Date(),
+              moistureReading: reading,
+              moistureTarget: target,
+            })
+            .where(eq(runSteps.id, runStep.id))
+            .run()
+
+          try {
+            await startValve(planned.valve.id, planned.step.durationMinutes)
+          } catch (error) {
+            finishStep(
+              runStep.id,
+              "failed",
+              error instanceof Error ? error.message : String(error)
+            )
+            return null
+          }
+
+          return { planned, runStep }
         })
-        .where(eq(runSteps.id, runStep.id))
-        .run()
-
-      continue
-    }
-
-    db.update(runSteps)
-      .set({
-        status: "running",
-        startedAt: new Date(),
-        moistureReading: reading,
-        moistureTarget: target,
-      })
-      .where(eq(runSteps.id, runStep.id))
-      .run()
-
-    try {
-      await startValve(planned.valve.id, planned.step.durationMinutes)
-    } catch (error) {
-      finishStep(
-        runStep.id,
-        "failed",
-        error instanceof Error ? error.message : String(error)
       )
-      continue
-    }
+    ).filter((entry) => entry != null)
 
-    await sleep(planned.step.durationMinutes * 60_000, signal)
+    // Nothing opened — hand straight over to the next group rather than idling
+    // through the gap. This is what makes a skip shift the rest of the run
+    // earlier.
+    if (started.length === 0) continue
+
+    const groupMinutes = Math.max(
+      ...started.map(({ planned }) => planned.step.durationMinutes)
+    )
+
+    await sleep(groupMinutes * 60_000, signal)
 
     if (signal.aborted) {
-      // The device would close on its own, but an explicit stop makes "off" immediate.
-      await stopValve(planned.valve.id).catch(() => {})
-      finishStep(runStep.id, "completed", "Stopped early")
+      // The devices would close on their own, but an explicit stop makes "off"
+      // immediate.
+      await Promise.all(
+        started.map(({ planned }) => stopValve(planned.valve.id).catch(() => {}))
+      )
+
+      for (const { runStep } of started) {
+        finishStep(runStep.id, "completed", "Stopped early")
+      }
+
       aborted = true
       continue
     }
 
-    finishStep(runStep.id, "completed")
+    for (const { runStep } of started) finishStep(runStep.id, "completed")
   }
 
   db.update(runs)

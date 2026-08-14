@@ -33,6 +33,8 @@ export type TimelineStep = {
   startMinutes: number
   endMinutes: number
   durationMinutes: number
+  /** Parallel steps share a group index and therefore a start time. */
+  group: number
   skipped: boolean
 }
 
@@ -135,11 +137,22 @@ export const Timeline = ({ data }: { data: TimelineData }) => {
                 const left = percent(step.startMinutes)
                 const width = percent(step.endMinutes) - left
 
+                // Parallel members occupy the same span, so split the row's
+                // height between them rather than drawing one on top of another.
+                const siblings = row.steps.filter((s) => s.group === step.group)
+                const lane = siblings.indexOf(step)
+                const laneHeight = 100 / siblings.length
+
                 return (
                   <span
                     key={index}
-                    className="group absolute inset-y-1 overflow-visible"
-                    style={{ left: `${left}%`, width: `${width}%` }}
+                    className="group absolute overflow-visible"
+                    style={{
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      top: `calc(0.25rem + ${lane * laneHeight}% * 0.9)`,
+                      height: `calc((100% - 0.5rem) * ${1 / siblings.length})`,
+                    }}
                   >
                     <span
                       className={cx(
@@ -148,9 +161,10 @@ export const Timeline = ({ data }: { data: TimelineData }) => {
                         // are rounded. A fixed gap between every segment would
                         // eat most of a 10-minute block on a 16-hour axis, so
                         // segments are divided by a hairline instead.
-                        index === 0 && "rounded-l-[4px]",
-                        index === row.steps.length - 1 && "rounded-r-[4px]",
-                        index < row.steps.length - 1 &&
+                        step.group === 0 && "rounded-l-[4px]",
+                        step.group === row.steps[row.steps.length - 1].group &&
+                          "rounded-r-[4px]",
+                        step.group < row.steps[row.steps.length - 1].group &&
                           "border-r border-white/70 dark:border-stone-900/70",
                         step.skipped && "opacity-40"
                       )}
@@ -169,6 +183,7 @@ export const Timeline = ({ data }: { data: TimelineData }) => {
                       {step.name} · {formatMinutes(step.startMinutes)}–
                       {formatMinutes(step.endMinutes)} · {step.durationMinutes}
                       {" min"}
+                      {siblings.length > 1 && " · parallel"}
                       {step.skipped && " · likely skipped"}
                     </span>
                   </span>

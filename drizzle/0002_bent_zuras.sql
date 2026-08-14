@@ -1,0 +1,1 @@
+ALTER TABLE `schedule_steps` ADD `starts_with_previous` integer DEFAULT false NOT NULL;

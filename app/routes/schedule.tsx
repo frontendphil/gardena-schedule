@@ -8,9 +8,11 @@ import {
   EmptyState,
   Field,
   Input,
+  SavedFlash,
   Select,
   Toggle,
   cx,
+  useIsPending,
 } from "../components/ui"
 import { db } from "../db"
 import {
@@ -20,7 +22,14 @@ import {
   valves as valvesTable,
 } from "../db/schema"
 import { getValves } from "../gardena/store"
-import { byDisplayName, displayName } from "../scheduler/plan"
+import {
+  MAX_PARALLEL_PER_CONTROLLER,
+  byDisplayName,
+  controllerOf,
+  displayName,
+  groupSteps,
+  parallelViolations,
+} from "../scheduler/plan"
 import {
   ALL_DAYS,
   DAY_NAMES,
@@ -58,6 +67,7 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
       id: step.id,
       valveId: step.valveId,
       durationMinutes: step.durationMinutes,
+      startsWithPrevious: step.startsWithPrevious,
       name: valvesById.has(step.valveId)
         ? displayName(valvesById.get(step.valveId)!)
         : "Unknown sprinkler",
@@ -153,7 +163,7 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
       return { error: error instanceof Error ? error.message : String(error) }
     }
 
-    return null
+    return { ok: true }
   }
 
   if (intent === "duplicate-schedule") {
@@ -329,6 +339,55 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     return null
   }
 
+  if (intent === "toggle-parallel") {
+    const stepId = Number(formData.get("stepId"))
+    const startsWithPrevious = formData.get("startsWithPrevious") === "on"
+
+    const ordered = db
+      .select()
+      .from(scheduleStepsTable)
+      .where(eq(scheduleStepsTable.scheduleId, scheduleId))
+      .orderBy(scheduleStepsTable.position)
+      .all()
+
+    const proposed = ordered.map((step) =>
+      step.id === stepId ? { ...step, startsWithPrevious } : step
+    )
+
+    // A controller can only hold two of its valves open at once, so refuse the
+    // change rather than letting the runner discover it at 06:00.
+    const violation = parallelViolations(proposed)[0]
+
+    if (violation != null) {
+      const valveNames = new Map(
+        db
+          .select()
+          .from(valvesTable)
+          .all()
+          .map((valve) => [valve.id, displayName(valve).trim()])
+      )
+
+      // Name the sprinklers that actually clash — "controller c06e8316" means
+      // nothing to anyone standing in a garden.
+      const clashing = groupSteps(proposed)
+        [violation.group].filter(
+          (step) => controllerOf(step.valveId) === violation.controller
+        )
+        .map((step) => valveNames.get(step.valveId) ?? step.valveId)
+
+      return {
+        error: `${clashing.slice(0, -1).join(", ")} and ${clashing.at(-1)} are on the same controller, which can only open ${MAX_PARALLEL_PER_CONTROLLER} valves at once.`,
+      }
+    }
+
+    db.update(scheduleStepsTable)
+      .set({ startsWithPrevious })
+      .where(eq(scheduleStepsTable.id, stepId))
+      .run()
+
+    return { ok: true }
+  }
+
   if (intent === "move-step") {
     const stepId = Number(formData.get("stepId"))
     const direction = formData.get("direction") === "up" ? "up" : "down"
@@ -394,6 +453,15 @@ export default function ScheduleEditor({
   const submit = useSubmit()
   const reorderFetcher = useFetcher()
 
+  // Hoisted: these are hooks, and two of the buttons below live inside
+  // conditional JSX where calling them inline would change the hook order.
+  const savingSchedule = useIsPending("save-schedule")
+  const duplicating = useIsPending("duplicate-schedule")
+  const deleting = useIsPending("delete-schedule")
+  const addingStep = useIsPending("add-step")
+  const addingAll = useIsPending("add-all-steps")
+
+
   const [startTime, setStartTime] = useState(schedule.startTime)
   const [recurrence, setRecurrence] = useState(schedule.recurrence)
   const [durations, setDurations] = useState<Record<number, number>>(() =>
@@ -446,22 +514,46 @@ export default function ScheduleEditor({
     )
   }
 
-  // Requirement 1: the user authors order and duration; every clock time below is
+  // The user authors order, duration and grouping; every clock time below is
   // derived, and derived live so the effect of a change is immediately visible.
+  // Mirrors `buildPlan`: a group starts once and lasts as long as its longest
+  // member, so parallel steps must not advance the offset individually.
   const timeline = useMemo(() => {
+    const minutesOf = (step: (typeof orderedSteps)[number]) =>
+      durations[step.id] ?? step.durationMinutes
+
     let offset = 0
 
-    return orderedSteps.map((step) => {
-      const minutes = durations[step.id] ?? step.durationMinutes
+    return groupSteps(orderedSteps).flatMap((group, groupIndex) => {
       const startsAt = addMinutes(startTime, offset)
-      offset += minutes
+      const groupMinutes = Math.max(...group.map(minutesOf))
 
-      return { ...step, minutes, startsAt, endsAt: addMinutes(startTime, offset) }
+      const rows = group.map((step) => ({
+        ...step,
+        minutes: minutesOf(step),
+        group: groupIndex,
+        groupSize: group.length,
+        startsAt,
+        endsAt: addMinutes(startTime, offset + minutesOf(step)),
+      }))
+
+      offset += groupMinutes
+      return rows
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderedSteps.map((step) => step.id).join(","), steps, durations, startTime])
 
-  const totalMinutes = timeline.reduce((sum, step) => sum + step.minutes, 0)
+  // Only one member of each parallel group contributes to the elapsed time.
+  const totalMinutes = [
+    ...new Map(timeline.map((step) => [step.group, step])).keys(),
+  ].reduce(
+    (sum, group) =>
+      sum +
+      Math.max(
+        ...timeline.filter((step) => step.group === group).map((s) => s.minutes)
+      ),
+    0
+  )
 
   return (
     <>
@@ -471,13 +563,16 @@ export default function ScheduleEditor({
           <div className="flex items-center gap-2">
             <Form method="post">
               <input type="hidden" name="intent" value="duplicate-schedule" />
-              <Button type="submit">Duplicate</Button>
+              <Button type="submit" busy={duplicating}>
+                Duplicate
+              </Button>
             </Form>
             <Form method="post">
               <input type="hidden" name="intent" value="delete-schedule" />
               <Button
                 type="submit"
                 variant="danger"
+                busy={deleting}
                 onClick={(event) => {
                   if (!confirm(`Delete "${schedule.name}"?`)) {
                     event.preventDefault()
@@ -577,9 +672,16 @@ export default function ScheduleEditor({
               <Toggle name="enabled" defaultChecked={schedule.enabled} />
               <span className="text-sm font-medium">Schedule enabled</span>
             </label>
-            <Button type="submit" variant="primary">
-              Save
-            </Button>
+            <div className="flex items-center gap-3">
+              <SavedFlash token={actionData} />
+              <Button
+                type="submit"
+                variant="primary"
+                busy={savingSchedule}
+              >
+                Save
+              </Button>
+            </div>
           </div>
 
           {actionData?.error != null && (
@@ -615,7 +717,14 @@ export default function ScheduleEditor({
                   persistOrder()
                 }}
                 className={cx(
-                  "flex flex-wrap items-center gap-3 rounded-lg border p-3 transition-colors",
+                  "flex flex-wrap items-center gap-3 border p-3 transition-colors",
+                  // Members of a parallel group are visually welded together, so
+                  // "these two run at once" is legible without reading times.
+                  step.startsWithPrevious
+                    ? "-mt-2 rounded-b-lg border-t-0"
+                    : "rounded-t-lg",
+                  step.groupSize === 1 && "rounded-lg",
+                  index === timeline.length - 1 && "rounded-b-lg",
                   draggingId === step.id
                     ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40"
                     : "border-stone-200 dark:border-stone-800"
@@ -637,8 +746,13 @@ export default function ScheduleEditor({
                   ⠿
                 </span>
 
-                <span className="w-24 shrink-0 font-mono text-sm tabular-nums text-stone-500 dark:text-stone-400">
-                  {step.startsAt}–{step.endsAt}
+                <span className="flex w-32 shrink-0 items-center gap-1 font-mono text-sm tabular-nums text-stone-500 dark:text-stone-400">
+                  <span aria-hidden className="w-3 text-emerald-600">
+                    {step.startsWithPrevious ? "⤷" : ""}
+                  </span>
+                  <span className="whitespace-nowrap">
+                    {step.startsAt}–{step.endsAt}
+                  </span>
                 </span>
 
                 <span className="min-w-0 flex-1 truncate font-medium">
@@ -670,32 +784,34 @@ export default function ScheduleEditor({
                 </Form>
 
                 <div className="flex items-center gap-1">
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="move-step" />
-                    <input type="hidden" name="stepId" value={step.id} />
-                    <input type="hidden" name="direction" value="up" />
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      disabled={index === 0}
-                      aria-label={`Move ${step.name} earlier`}
+                  {index === 0 && (
+                    <span
+                      aria-hidden
+                      className="hidden pr-1 text-xs text-stone-400 sm:inline"
                     >
-                      ↑
-                    </Button>
-                  </Form>
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="move-step" />
-                    <input type="hidden" name="stepId" value={step.id} />
-                    <input type="hidden" name="direction" value="down" />
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      disabled={index === timeline.length - 1}
-                      aria-label={`Move ${step.name} later`}
-                    >
-                      ↓
-                    </Button>
-                  </Form>
+                      starts the run
+                    </span>
+                  )}
+                  {index > 0 && (
+                    <Form method="post" className="flex items-center gap-2 pr-1">
+                      <input
+                        type="hidden"
+                        name="intent"
+                        value="toggle-parallel"
+                      />
+                      <input type="hidden" name="stepId" value={step.id} />
+                      <span className="text-xs text-stone-500 dark:text-stone-400">
+                        With previous
+                      </span>
+                      <Toggle
+                        name="startsWithPrevious"
+                        checked={step.startsWithPrevious}
+                        onChange={(event) => submit(event.currentTarget.form!)}
+                        aria-label={`Run ${step.name} at the same time as the sprinkler above`}
+                      />
+                    </Form>
+                  )}
+
                   <Form method="post">
                     <input type="hidden" name="intent" value="remove-step" />
                     <input type="hidden" name="stepId" value={step.id} />
@@ -731,12 +847,14 @@ export default function ScheduleEditor({
                   </Select>
                 </Field>
               </div>
-              <Button type="submit">Add</Button>
+              <Button type="submit" busy={addingStep}>
+                Add
+              </Button>
             </Form>
 
             <Form method="post">
               <input type="hidden" name="intent" value="add-all-steps" />
-              <Button type="submit">
+              <Button type="submit" busy={addingAll}>
                 Add all {available.length > 1 && `(${available.length})`}
               </Button>
             </Form>

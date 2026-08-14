@@ -1,4 +1,5 @@
-import type { ComponentProps, ReactNode } from "react"
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react"
+import { useNavigation } from "react-router"
 
 export const cx = (...classes: Array<string | false | null | undefined>) =>
   classes.filter(Boolean).join(" ")
@@ -52,20 +53,135 @@ const buttonStyles = {
     "text-stone-600 hover:bg-stone-200 dark:text-stone-400 dark:hover:bg-stone-800",
 }
 
+export const Spinner = ({ className }: { className?: string }) => (
+  <svg
+    aria-hidden
+    viewBox="0 0 16 16"
+    className={cx("h-3.5 w-3.5 animate-spin", className)}
+  >
+    <circle
+      cx="8"
+      cy="8"
+      r="6.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeOpacity="0.25"
+    />
+    <path
+      d="M8 1.5a6.5 6.5 0 0 1 6.5 6.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+    />
+  </svg>
+)
+
 export const Button = ({
   variant = "secondary",
   className,
+  busy = false,
+  children,
   ...props
-}: ComponentProps<"button"> & { variant?: keyof typeof buttonStyles }) => (
+}: ComponentProps<"button"> & {
+  variant?: keyof typeof buttonStyles
+  /** Shows a spinner and blocks re-submission while the action is in flight. */
+  busy?: boolean
+}) => (
   <button
     {...props}
+    disabled={props.disabled || busy}
+    aria-busy={busy || undefined}
     className={cx(
       "inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
       buttonStyles[variant],
       className
     )}
-  />
+  >
+    {busy && <Spinner />}
+    {children}
+  </button>
 )
+
+/**
+ * The form data currently in flight, if any.
+ *
+ * Every mutation in this app is a form post carrying an `intent`, so this lets
+ * each button light up for its own action and nothing else. Pages with several
+ * copies of the same action (one Save per sprinkler) can narrow further on the
+ * row's id, so pressing one does not spin all of them.
+ */
+export const usePendingForm = () => {
+  const navigation = useNavigation()
+
+  return navigation.state === "idle" ? null : (navigation.formData ?? null)
+}
+
+/** True while `intent` is being submitted, optionally for one specific row. */
+export const useIsPending = (
+  intent: string,
+  match?: { field: string; value: string }
+) => {
+  const pending = usePendingForm()
+
+  if (pending?.get("intent") !== intent) return false
+
+  return match == null || pending.get(match.field) === match.value
+}
+
+/**
+ * A brief "Saved" acknowledgement.
+ *
+ * Without it a successful save is indistinguishable from a dead button: the
+ * server re-renders the same values and nothing on screen changes.
+ */
+export const SavedFlash = ({
+  /** Changes whenever the server confirms another save. */
+  token,
+  children = "Saved",
+}: {
+  token: unknown
+  children?: ReactNode
+}) => {
+  const [visible, setVisible] = useState(false)
+  const first = useRef(true)
+
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+
+    if (token == null) return
+
+    setVisible(true)
+    const timer = setTimeout(() => setVisible(false), 2500)
+
+    return () => clearTimeout(timer)
+  }, [token])
+
+  if (!visible) return null
+
+  return (
+    <span
+      role="status"
+      className="inline-flex items-center gap-1.5 text-sm text-emerald-700 dark:text-emerald-400"
+    >
+      <svg viewBox="0 0 16 16" aria-hidden className="h-4 w-4">
+        <path
+          d="M3.5 8.5l3 3 6-6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      {children}
+    </span>
+  )
+}
 
 export const Input = ({ className, ...props }: ComponentProps<"input">) => (
   <input

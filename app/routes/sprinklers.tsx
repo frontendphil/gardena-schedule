@@ -1,7 +1,16 @@
 import { eq } from "drizzle-orm"
 import { Form, useSubmit } from "react-router"
 
-import { Badge, Button, Card, EmptyState, Input, Toggle } from "../components/ui"
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  SavedFlash,
+  Toggle,
+  usePendingForm,
+} from "../components/ui"
 import { db } from "../db"
 import {
   settings as settingsTable,
@@ -66,7 +75,7 @@ export const action = async ({ request }: Route.ActionArgs) => {
       .where(eq(valvesTable.id, valveId))
       .run()
 
-    return null
+    return { ok: true, valveId }
   }
 
   if (intent === "toggle-hidden") {
@@ -103,10 +112,20 @@ const DisableToggle = ({
   </Form>
 )
 
-export default function Sprinklers({ loaderData }: Route.ComponentProps) {
+export default function Sprinklers({
+  loaderData,
+  actionData,
+}: Route.ComponentProps) {
   const { inUse, disabled, globalMoistureTarget } = loaderData
   const submit = useSubmit()
+  const pending = usePendingForm()
   const onToggle = (form: HTMLFormElement) => submit(form)
+
+  // Narrowed to the row, so saving one sprinkler does not spin all nine.
+  const savingValve =
+    pending?.get("intent") === "save"
+      ? String(pending.get("valveId"))
+      : null
 
   return (
     <>
@@ -176,7 +195,16 @@ export default function Sprinklers({ loaderData }: Route.ComponentProps) {
                     />
                   </label>
 
-                  <Button type="submit">Save</Button>
+                  <div className="flex items-center gap-2">
+                    <Button type="submit" busy={savingValve === valve.id}>
+                      Save
+                    </Button>
+                    {actionData != null &&
+                      "valveId" in actionData &&
+                      actionData.valveId === valve.id && (
+                        <SavedFlash token={actionData} />
+                      )}
+                  </div>
                 </Form>
               </li>
             ))}

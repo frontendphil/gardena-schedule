@@ -1,7 +1,17 @@
 import { eq } from "drizzle-orm"
 import { Form } from "react-router"
 
-import { Badge, Button, Card, Field, Input, Select, Toggle } from "../components/ui"
+import {
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  SavedFlash,
+  Select,
+  Toggle,
+  useIsPending,
+} from "../components/ui"
 import { db } from "../db"
 import { settings as settingsTable, valves as valvesTable } from "../db/schema"
 import { getRequestStats } from "../gardena/client"
@@ -76,12 +86,13 @@ export const action = async ({ request }: Route.ActionArgs) => {
     .where(eq(settingsTable.id, 1))
     .run()
 
-  return { ok: true }
+  return { ok: true, at: Date.now() }
 }
 
 export default function Settings({ loaderData, actionData }: Route.ComponentProps) {
   const { settings, sensors, overrides, connection, requests, version, startedAt } =
     loaderData
+  const saving = useIsPending("save-settings")
 
   return (
     <>
@@ -90,6 +101,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
         description="Applies to every schedule. Individual sprinklers can override the moisture target."
       >
         <Form method="post" className="space-y-5">
+          <input type="hidden" name="intent" value="save-settings" />
           <label className="flex items-start gap-3">
             <Toggle
               name="sensorGateEnabled"
@@ -167,13 +179,11 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
           </Field>
 
           <div className="flex items-center gap-3">
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" busy={saving}>
               Save
             </Button>
             {actionData != null && "ok" in actionData && (
-              <span className="text-sm text-emerald-700 dark:text-emerald-400">
-                Saved.
-              </span>
+              <SavedFlash token={actionData.at} />
             )}
             {actionData != null && "error" in actionData && (
               <span className="text-sm text-red-600 dark:text-red-400">
