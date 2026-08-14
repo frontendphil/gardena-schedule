@@ -14,7 +14,7 @@ import { requirePage } from "./guard"
  * on every screen and return the user to where they were.
  */
 export const action = async ({ request }: Route.ActionArgs) => {
-  await requirePage(request)
+  await requirePage()
 
   const formData = await request.formData()
   const enabled = formData.get("enabled") === "on"

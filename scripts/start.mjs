@@ -1,7 +1,5 @@
 import { spawn } from "node:child_process"
-import { randomBytes } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
 
 /**
  * Server entrypoint for containers.
@@ -18,7 +16,6 @@ const OPTIONS_PATH = "/data/options.json"
 const OPTION_ENV = {
   gardena_application_key: "GARDENA_APPLICATION_KEY",
   gardena_application_secret: "GARDENA_APPLICATION_SECRET",
-  app_password: "APP_PASSWORD",
 }
 
 const env = { ...process.env }
@@ -41,11 +38,9 @@ env.DATABASE_PATH ??= "/data/gardena.db"
 
 // Report bad configuration before anything else, so a first-time user sees the
 // instruction rather than a stack trace from whatever fails first.
-const missing = [
-  "GARDENA_APPLICATION_KEY",
-  "GARDENA_APPLICATION_SECRET",
-  "APP_PASSWORD",
-].filter((variable) => !env[variable])
+const missing = ["GARDENA_APPLICATION_KEY", "GARDENA_APPLICATION_SECRET"].filter(
+  (variable) => !env[variable]
+)
 
 if (missing.length > 0) {
   console.error(
@@ -55,25 +50,6 @@ if (missing.length > 0) {
         : "Set them in the container environment.")
   )
   process.exit(1)
-}
-
-/**
- * The cookie secret is an implementation detail, not something worth asking the
- * user to invent. Generate it once and keep it beside the database so restarts
- * do not sign everyone out.
- */
-if (!env.SESSION_SECRET) {
-  const dataDir = dirname(resolve(env.DATABASE_PATH))
-  const secretPath = resolve(dataDir, "session-secret")
-
-  // The volume can be empty on first boot, before the app creates the directory.
-  mkdirSync(dataDir, { recursive: true })
-
-  if (!existsSync(secretPath)) {
-    writeFileSync(secretPath, randomBytes(32).toString("hex"), { mode: 0o600 })
-  }
-
-  env.SESSION_SECRET = readFileSync(secretPath, "utf8").trim()
 }
 
 const server = spawn(

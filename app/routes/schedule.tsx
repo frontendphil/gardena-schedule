@@ -19,6 +19,7 @@ import {
   settings as settingsTable,
   valves as valvesTable,
 } from "../db/schema"
+import { getValves } from "../gardena/store"
 import { displayName } from "../scheduler/plan"
 import {
   ALL_DAYS,
@@ -29,6 +30,9 @@ import {
   parseTimeOfDay,
 } from "../scheduler/time"
 import type { Route } from "./+types/schedule"
+
+/** Starting duration for a newly added sprinkler, in minutes. */
+const DEFAULT_STEP_MINUTES = 10
 
 export const loader = async ({ params }: Route.LoaderArgs) => {
   const scheduleId = Number(params.scheduleId)
@@ -65,12 +69,23 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
 
   const used = new Set(steps.map((step) => step.valveId))
 
+  // A valve the gateway is not currently reporting cannot be watered, so it has
+  // no business in the picker either.
+  const reachable = new Set(
+    getValves()
+      .filter((valve) => valve.connected)
+      .map((valve) => valve.id)
+  )
+
   return {
     schedule,
     steps,
     today: getLocalDateKey(new Date(), settings.timezone),
     available: valveRows
-      .filter((valve) => !valve.hidden && !used.has(valve.id))
+      .filter(
+        (valve) =>
+          !valve.hidden && !used.has(valve.id) && reachable.has(valve.id)
+      )
       .map((valve) => ({ id: valve.id, name: displayName(valve) })),
   }
 }
@@ -145,6 +160,100 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     return null
   }
 
+  if (intent === "duplicate-schedule") {
+    const source = db
+      .select()
+      .from(schedulesTable)
+      .where(eq(schedulesTable.id, scheduleId))
+      .get()
+
+    if (source == null) return null
+
+    const copy = db.transaction((tx) => {
+      const { id: _id, createdAt: _createdAt, ...rest } = source
+
+      // The copy starts disabled: two identical schedules both firing would
+      // double every watering until the user has adjusted the new one.
+      const created = tx
+        .insert(schedulesTable)
+        .values({ ...rest, name: `${source.name} (copy)`, enabled: false })
+        .returning()
+        .get()
+
+      const steps = tx
+        .select()
+        .from(scheduleStepsTable)
+        .where(eq(scheduleStepsTable.scheduleId, scheduleId))
+        .orderBy(scheduleStepsTable.position)
+        .all()
+
+      if (steps.length > 0) {
+        tx.insert(scheduleStepsTable)
+          .values(
+            steps.map(({ id: _stepId, ...step }) => ({
+              ...step,
+              scheduleId: created.id,
+            }))
+          )
+          .run()
+      }
+
+      return created
+    })
+
+    return redirect(
+      href("/schedules/:scheduleId", { scheduleId: String(copy.id) })
+    )
+  }
+
+  if (intent === "add-all-steps") {
+    const used = new Set(
+      db
+        .select({ valveId: scheduleStepsTable.valveId })
+        .from(scheduleStepsTable)
+        .where(eq(scheduleStepsTable.scheduleId, scheduleId))
+        .all()
+        .map((step) => step.valveId)
+    )
+
+    const reachable = new Set(
+      getValves().filter((valve) => valve.connected).map((valve) => valve.id)
+    )
+
+    const toAdd = db
+      .select()
+      .from(valvesTable)
+      .orderBy(valvesTable.sortOrder)
+      .all()
+      .filter(
+        (valve) =>
+          !valve.hidden && !used.has(valve.id) && reachable.has(valve.id)
+      )
+
+    if (toAdd.length === 0) return null
+
+    const next = db
+      .select({ max: sql<number | null>`max(${scheduleStepsTable.position})` })
+      .from(scheduleStepsTable)
+      .where(eq(scheduleStepsTable.scheduleId, scheduleId))
+      .get()
+
+    let position = (next?.max ?? -1) + 1
+
+    db.insert(scheduleStepsTable)
+      .values(
+        toAdd.map((valve) => ({
+          scheduleId,
+          valveId: valve.id,
+          durationMinutes: DEFAULT_STEP_MINUTES,
+          position: position++,
+        }))
+      )
+      .run()
+
+    return null
+  }
+
   if (intent === "add-step") {
     const valveId = String(formData.get("valveId") ?? "")
 
@@ -160,7 +269,7 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
       .values({
         scheduleId,
         valveId,
-        durationMinutes: 10,
+        durationMinutes: DEFAULT_STEP_MINUTES,
         position: (next?.max ?? -1) + 1,
       })
       .run()
@@ -282,20 +391,26 @@ export default function ScheduleEditor({
       <Card
         title="Schedule"
         actions={
-          <Form method="post">
-            <input type="hidden" name="intent" value="delete-schedule" />
-            <Button
-              type="submit"
-              variant="danger"
-              onClick={(event) => {
-                if (!confirm(`Delete "${schedule.name}"?`)) {
-                  event.preventDefault()
-                }
-              }}
-            >
-              Delete
-            </Button>
-          </Form>
+          <div className="flex items-center gap-2">
+            <Form method="post">
+              <input type="hidden" name="intent" value="duplicate-schedule" />
+              <Button type="submit">Duplicate</Button>
+            </Form>
+            <Form method="post">
+              <input type="hidden" name="intent" value="delete-schedule" />
+              <Button
+                type="submit"
+                variant="danger"
+                onClick={(event) => {
+                  if (!confirm(`Delete "${schedule.name}"?`)) {
+                    event.preventDefault()
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            </Form>
+          </div>
         }
       >
         <Form method="post" className="space-y-5">
@@ -492,21 +607,33 @@ export default function ScheduleEditor({
         )}
 
         {available.length > 0 && (
-          <Form method="post" className="mt-4 flex flex-wrap items-end gap-3">
-            <input type="hidden" name="intent" value="add-step" />
-            <div className="min-w-48 flex-1">
-              <Field label="Add sprinkler">
-                <Select name="valveId" className="mt-1">
-                  {available.map((valve) => (
-                    <option key={valve.id} value={valve.id}>
-                      {valve.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-            <Button type="submit">Add</Button>
-          </Form>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <Form
+              method="post"
+              className="flex min-w-48 flex-1 flex-wrap items-end gap-3"
+            >
+              <input type="hidden" name="intent" value="add-step" />
+              <div className="min-w-40 flex-1">
+                <Field label="Add sprinkler">
+                  <Select name="valveId" className="mt-1">
+                    {available.map((valve) => (
+                      <option key={valve.id} value={valve.id}>
+                        {valve.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              <Button type="submit">Add</Button>
+            </Form>
+
+            <Form method="post">
+              <input type="hidden" name="intent" value="add-all-steps" />
+              <Button type="submit">
+                Add all {available.length > 1 && `(${available.length})`}
+              </Button>
+            </Form>
+          </div>
         )}
       </Card>
     </>

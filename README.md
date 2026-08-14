@@ -44,7 +44,8 @@ shows the live request count for the running process.
 | | |
 |---|---|
 | **Schedules** | An ordered list of sprinklers with a duration each. Reorder or change a duration and every clock time updates live. |
-| **Sprinklers, not controllers** | The Gardena `DEVICE` / `VALVE_SET` layer is never surfaced. Sprinklers are a flat list you can rename, reorder and hide. |
+| **Sprinklers, not controllers** | The Gardena `DEVICE` / `VALVE_SET` layer is never surfaced. Sprinklers are a flat list you can rename, reorder and switch off. |
+| **Unused valves** | Gardena reports every valve port as healthy whether or not anything is wired to it, so unused ports are switched off on the Sprinklers page and disappear from schedules and the dashboard. Ports still carrying the default `Valve N` name start switched off; that guess only sets the initial position of the toggle. |
 | **Multiple schedules** | As many as you like — a morning and an evening one, say — each independently switchable. |
 | **Master switch** | One toggle in the header stops every schedule. Turning it off mid-run closes the open valve immediately. |
 | **Moisture gating** | With the soil sensor enabled, a sprinkler is skipped when the reading is at or above its target. Re-checked before every sprinkler, so a long run reacts to the soil as it goes. |
@@ -68,12 +69,12 @@ pnpm dev
 | Variable | |
 |---|---|
 | `GARDENA_APPLICATION_KEY` / `GARDENA_APPLICATION_SECRET` | From the [Husqvarna developer portal](https://developer.husqvarnagroup.cloud/). The app needs the Gardena Smart System API connected to it. |
-| `APP_PASSWORD` | Shared password for signing in. |
-| `SESSION_SECRET` | At least 16 characters; signs the login cookie. Changing it signs everyone out. |
 | `DATABASE_PATH` | SQLite file location. Defaults to `./data/gardena.db`. |
 
-The app controls physical valves, so a single shared password guards every route.
-Put it behind HTTPS.
+There is **no authentication** — the app assumes it is reachable only from your
+home network. Anyone who can open the page can water the garden, so do not
+forward the port or otherwise expose it to the internet without putting an
+authenticating proxy in front of it.
 
 ## Development
 
@@ -99,11 +100,11 @@ needs, and it costs nothing extra to run.
    *Samba share*, *Studio Code Server* or *Terminal & SSH* add-on.
 3. **Settings → Add-ons → Add-on Store → ⋮ → Check for updates**, then open
    *Local add-ons* and install **Garden**. The first build takes a few minutes.
-4. On the **Configuration** tab fill in your Gardena key and secret and pick a
-   password, then start the add-on and open the web UI.
+4. On the **Configuration** tab fill in your Gardena key and secret, then start
+   the add-on and open the web UI.
 
-The database and the generated cookie secret live in the add-on's `/data`, so
-they survive restarts, updates and Home Assistant reboots.
+The database lives in the add-on's `/data`, so schedules survive restarts,
+updates and Home Assistant reboots.
 
 Notes:
 
@@ -114,9 +115,10 @@ Notes:
   plain Docker.
 - This add-on is **not** exposed through Home Assistant Ingress. Ingress serves an
   add-on under a path containing a per-session token, which a server-rendered
-  router cannot use as a static basename. It runs on port 3000 with its own
-  password instead. To reach it from the Home Assistant sidebar, add a
-  `panel_iframe` entry pointing at `http://<home-assistant>:3000`.
+  router cannot use as a static basename. It runs on port 3000 instead, with no
+  authentication of its own — see the note under *Setup*. To reach it from the
+  Home Assistant sidebar, add a `panel_iframe` entry pointing at
+  `http://<home-assistant>:3000`.
 - Set the timezone on the app's own Settings page. The container timezone does
   not matter — schedule times are resolved against `settings.timezone`.
 

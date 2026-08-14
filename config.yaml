@@ -31,8 +31,6 @@ watchdog: "tcp://[HOST]:[PORT:3000]"
 options:
   gardena_application_key: ""
   gardena_application_secret: ""
-  app_password: ""
 schema:
   gardena_application_key: str
   gardena_application_secret: password
-  app_password: password

@@ -19,12 +19,12 @@ import { requirePage } from "./guard"
 
 /**
  * Runs before every loader and action in this subtree, including this route's
- * own. Child loaders can therefore assume a signed-in session and a booted
- * runtime without repeating the check.
+ * own. Child loaders can therefore assume a booted runtime without repeating
+ * the check.
  */
 export const middleware: Route.MiddlewareFunction[] = [
-  async ({ request }) => {
-    await requirePage(request)
+  async () => {
+    await requirePage()
   },
 ]
 
@@ -123,17 +123,6 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
       <main className="flex-1 space-y-6">
         <Outlet />
       </main>
-
-      <footer className="flex justify-end pt-2">
-        <Form method="post" action={href("/logout")}>
-          <button
-            type="submit"
-            className="text-xs text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
-          >
-            Sign out
-          </button>
-        </Form>
-      </footer>
     </div>
   )
 }

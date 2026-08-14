@@ -5,6 +5,16 @@ import { settings, valves } from "../db/schema"
 import { getSensor, getValves } from "./store"
 
 /**
+ * Gardena names an unused valve port `Valve 1` … `Valve 6` and reports it as
+ * `state: OK` exactly like a connected one — the API gives us no way to know
+ * whether anything is actually plugged in. A still-default name is the only
+ * available signal, so it is used to pick the initial visibility and nothing
+ * more: the guess is applied once, when the valve is first discovered, and the
+ * Sprinklers page can override it permanently.
+ */
+const looksUnused = (apiName: string) => /^valve\s*\d+$/i.test(apiName.trim())
+
+/**
  * Mirrors the valves the API reports into the `valves` table.
  *
  * Only `apiName` and `lastSeenAt` are ever overwritten — renames, moisture
@@ -41,6 +51,7 @@ export const syncValves = () => {
           .values({
             id: valve.id,
             apiName: valve.name,
+            hidden: looksUnused(valve.name),
             sortOrder: nextSortOrder++,
             lastSeenAt: now,
           })
