@@ -22,10 +22,14 @@ COPY --from=production-dependencies-env /app/node_modules ./node_modules
 COPY --from=build-env /app/build ./build
 # Migrations are applied at boot, so they have to ship with the image.
 COPY drizzle ./drizzle
+COPY scripts ./scripts
 
 # SQLite lives on a mounted volume; without one, schedules are lost on redeploy.
+# As a Home Assistant add-on, Supervisor provides /data automatically.
 ENV DATABASE_PATH=/data/gardena.db
 VOLUME /data
 
 EXPOSE 3000
-CMD ["pnpm", "run", "start"]
+# Resolves configuration from either the environment or a Home Assistant add-on
+# options file before starting the server.
+CMD ["node", "scripts/start.mjs"]

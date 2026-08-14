@@ -1,0 +1,38 @@
+# Home Assistant add-on manifest.
+#
+# Copy this whole repository to /addons/garden on the Home Assistant host and it
+# appears under Settings → Add-ons → Local add-ons.
+name: Garden
+version: "1.0.0"
+slug: garden
+description: Scheduling for a GARDENA smart irrigation system
+
+# Home Assistant Green is aarch64; amd64 covers running the same add-on on an
+# Intel NUC or a VM.
+arch:
+  - aarch64
+  - amd64
+
+# The image is not based on a Home Assistant base image, so Supervisor's s6 init
+# would have nothing to do.
+init: false
+startup: application
+boot: auto
+
+ports:
+  3000/tcp: 3000
+ports_description:
+  3000/tcp: Web interface
+webui: "http://[HOST]:[PORT:3000]"
+
+# The scheduler has to survive a Home Assistant restart without a browser open.
+watchdog: "tcp://[HOST]:[PORT:3000]"
+
+options:
+  gardena_application_key: ""
+  gardena_application_secret: ""
+  app_password: ""
+schema:
+  gardena_application_key: str
+  gardena_application_secret: password
+  app_password: password

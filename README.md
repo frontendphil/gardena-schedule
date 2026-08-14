@@ -85,6 +85,43 @@ pnpm db:generate # regenerate migrations after editing app/db/schema.ts
 
 ## Deployment
 
+The app needs a process that stays awake and a file that survives restarts, so a
+small always-on machine suits it far better than a serverless host.
+
+### As a Home Assistant add-on (recommended)
+
+Home Assistant OS runs add-ons as Docker containers, gives each one a persistent
+`/data`, restarts them on boot and supervises them. That is exactly what this app
+needs, and it costs nothing extra to run.
+
+1. Enable **Advanced Mode** on your Home Assistant user profile.
+2. Copy this repository to `/addons/garden` on the Home Assistant host — via the
+   *Samba share*, *Studio Code Server* or *Terminal & SSH* add-on.
+3. **Settings → Add-ons → Add-on Store → ⋮ → Check for updates**, then open
+   *Local add-ons* and install **Garden**. The first build takes a few minutes.
+4. On the **Configuration** tab fill in your Gardena key and secret and pick a
+   password, then start the add-on and open the web UI.
+
+The database and the generated cookie secret live in the add-on's `/data`, so
+they survive restarts, updates and Home Assistant reboots.
+
+Notes:
+
+- `config.yaml` is the add-on manifest. `arch` covers `aarch64` (Home Assistant
+  Green, Raspberry Pi) and `amd64`.
+- Configuration is read from the add-on options; `scripts/start.mjs` maps them to
+  the environment variables the app expects, so the same image also runs under
+  plain Docker.
+- This add-on is **not** exposed through Home Assistant Ingress. Ingress serves an
+  add-on under a path containing a per-session token, which a server-rendered
+  router cannot use as a static basename. It runs on port 3000 with its own
+  password instead. To reach it from the Home Assistant sidebar, add a
+  `panel_iframe` entry pointing at `http://<home-assistant>:3000`.
+- Set the timezone on the app's own Settings page. The container timezone does
+  not matter — schedule times are resolved against `settings.timezone`.
+
+### As a plain Docker container
+
 ```bash
 docker build -t garden .
 docker run -p 3000:3000 --env-file .env -v garden-data:/data garden
@@ -92,6 +129,13 @@ docker run -p 3000:3000 --env-file .env -v garden-data:/data garden
 
 Migrations run automatically on boot. **The `/data` volume must be persistent** —
 without it, every redeploy wipes your schedules.
+
+### Not Vercel
+
+Serverless functions are frozen between requests and have no durable local disk,
+so the scheduler would never fire and the database would vanish. If you do want a
+cloud host, use an always-on container platform (Fly.io with
+`min_machines_running = 1`, Railway) and attach a volume at `/data`.
 
 ## How it fits together
 

@@ -1,4 +1,7 @@
+# better-sqlite3 is deliberately absent: it ships prebuilt binaries for every
+# platform we run on (including linuxmusl-arm64 for Alpine on a Home Assistant
+# Green), and its loader prefers those over a node-gyp build. Allowing its build
+# script would force a compile that needs Python and a toolchain in the image.
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
-  - better-sqlite3
   - esbuild

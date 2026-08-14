@@ -1,6 +1,6 @@
 import { migrateDatabase } from "../db"
-import { startScheduler } from "../scheduler/runner"
-import { startSocket } from "./socket"
+import { startScheduler, stopScheduler } from "../scheduler/runner"
+import { startSocket, stopSocket } from "./socket"
 import { subscribe } from "./store"
 import { syncFromStore } from "./sync"
 
@@ -50,6 +50,33 @@ const boot = async () => {
   }
 
   startScheduler()
+  registerShutdown()
+}
+
+/**
+ * Shuts down on the signal Home Assistant's Supervisor (and `docker stop`) send.
+ *
+ * The WebSocket and the scheduler tick both keep the event loop alive, so
+ * without this the process ignores SIGTERM and is eventually SIGKILLed. A valve
+ * that is watering is deliberately left alone: its duration is enforced by the
+ * device, and the next boot marks the interrupted run as aborted.
+ */
+const registerShutdown = () => {
+  let closing = false
+
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      if (closing) return
+      closing = true
+
+      console.log(`[runtime] ${signal} received, shutting down`)
+
+      stopScheduler()
+      stopSocket()
+
+      process.exit(0)
+    })
+  }
 }
 
 export const ensureRuntime = () => {
