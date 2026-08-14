@@ -3,7 +3,7 @@
 # Copy this whole repository to /addons/garden on the Home Assistant host and it
 # appears under Settings → Add-ons → Local add-ons.
 name: Garden
-version: "1.0.0"
+version: "1.1.0"
 slug: garden
 description: Scheduling for a GARDENA smart irrigation system
 
