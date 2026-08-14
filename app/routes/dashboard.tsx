@@ -1,6 +1,13 @@
-import { Link, href } from "react-router"
+import { Form, Link, href, useLocation } from "react-router"
 
-import { Badge, Card, EmptyState } from "../components/ui"
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  cx,
+  useIsPending,
+} from "../components/ui"
 import { db } from "../db"
 import {
   scheduleSteps as scheduleStepsTable,
@@ -9,7 +16,7 @@ import {
   valves as valvesTable,
   type RunStepStatus,
 } from "../db/schema"
-import { getSensor, getValves } from "../gardena/store"
+import { getDevices, getSensor, getValves } from "../gardena/store"
 import {
   buildPlan,
   displayName,
@@ -63,6 +70,14 @@ export const loader = async () => {
 
   const sensor = getSensor(settings.sensorId)
 
+  // The sensor service and its COMMON service share a device id, so the battery
+  // for the sensor we gate on is the one worth showing. The irrigation
+  // controllers are mains-powered and report no battery at all.
+  const sensorDevice =
+    sensor == null
+      ? null
+      : (getDevices().find((device) => device.id === sensor.id) ?? null)
+
   // Which sprinklers the current reading would currently hold back — the gate is
   // re-evaluated at watering time, so this is a preview, not a promise.
   const gated = settings.sensorGateEnabled && sensor?.soilHumidity != null
@@ -83,6 +98,10 @@ export const loader = async () => {
     soilHumidity: sensor?.soilHumidity ?? null,
     soilTemperature: sensor?.soilTemperature ?? null,
     measuredAt: sensor?.measuredAt ?? null,
+    sensorName: sensorDevice?.name ?? null,
+    batteryLevel: sensorDevice?.batteryLevel ?? null,
+    batteryMeasuredAt: sensorDevice?.batteryMeasuredAt ?? null,
+    signalLevel: sensorDevice?.rfLinkLevel ?? null,
     gated,
     watering: [...apiValves.values()]
       .filter((valve) => valve.watering)
@@ -120,6 +139,22 @@ const STEP_LABELS: Record<RunStepStatus, { label: string; tone: "neutral" | "act
   failed: { label: "Failed", tone: "bad" },
 }
 
+/** "just now" / "12 min ago" / "3 h ago" — how stale the reading is. */
+const formatAge = (measuredAt: Date | string | null) => {
+  if (measuredAt == null) return null
+
+  const minutes = Math.max(
+    0,
+    Math.round((Date.now() - new Date(measuredAt).getTime()) / 60_000)
+  )
+
+  if (minutes < 2) return "just now"
+  if (minutes < 60) return `${minutes} min ago`
+
+  const hours = Math.round(minutes / 60)
+  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`
+}
+
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
   const {
     timezone,
@@ -128,11 +163,18 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
     soilHumidity,
     soilTemperature,
     measuredAt,
+    sensorName,
+    batteryLevel,
+    batteryMeasuredAt,
+    signalLevel,
     gated,
     watering,
     upcoming,
     recentRuns,
   } = loaderData
+
+  const location = useLocation()
+  const refreshing = useIsPending("refresh")
 
   const dateFormat = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
@@ -159,24 +201,88 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
       )}
 
       <div className="grid gap-6 sm:grid-cols-2">
-        <Card title="Soil" description={`Sensor reading${measuredAt == null ? "" : ` · ${dateFormat.format(new Date(measuredAt))}`}`}>
+        <Card
+          title="Soil"
+          description={
+            measuredAt == null
+              ? "Sensor reading"
+              : `Measured ${formatAge(measuredAt)} · ${dateFormat.format(new Date(measuredAt))}`
+          }
+          actions={
+            <Form method="post" action={href("/refresh")}>
+              {/* Named so `useIsPending` can light up this button alone. */}
+              <input type="hidden" name="intent" value="refresh" />
+              <input type="hidden" name="returnTo" value={location.pathname} />
+              <Button
+                type="submit"
+                variant="ghost"
+                busy={refreshing}
+                title="Re-read from Gardena. The sensor decides when it measures — this cannot force a new reading."
+              >
+                Refresh
+              </Button>
+            </Form>
+          }
+        >
           {soilHumidity == null ? (
             <p className="text-sm text-stone-500 dark:text-stone-400">
               No sensor reading yet.
             </p>
           ) : (
             <>
-              <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-semibold tabular-nums">
-                  {soilHumidity}%
-                </span>
-                {soilTemperature != null && (
-                  <span className="text-sm text-stone-500 dark:text-stone-400">
-                    {soilTemperature}°C
-                  </span>
-                )}
-              </div>
-              <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">
+              <dl className="grid grid-cols-3 gap-4">
+                <div>
+                  <dt className="text-xs text-stone-500 dark:text-stone-400">
+                    Moisture
+                  </dt>
+                  <dd className="mt-0.5 text-3xl font-semibold tabular-nums">
+                    {soilHumidity}%
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-stone-500 dark:text-stone-400">
+                    Soil temp
+                  </dt>
+                  <dd className="mt-0.5 text-3xl font-semibold tabular-nums">
+                    {soilTemperature == null ? "—" : `${soilTemperature}°`}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-stone-500 dark:text-stone-400">
+                    Battery
+                  </dt>
+                  <dd
+                    className={cx(
+                      "mt-0.5 text-3xl font-semibold tabular-nums",
+                      batteryLevel != null &&
+                        batteryLevel <= 15 &&
+                        "text-red-600 dark:text-red-400",
+                      batteryLevel != null &&
+                        batteryLevel > 15 &&
+                        batteryLevel <= 30 &&
+                        "text-amber-600 dark:text-amber-400"
+                    )}
+                  >
+                    {batteryLevel == null ? "—" : `${batteryLevel}%`}
+                  </dd>
+                </div>
+              </dl>
+
+              {batteryLevel != null && batteryLevel <= 30 && (
+                <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                  {sensorName ?? "The sensor"} is down to {batteryLevel}%
+                  {batteryMeasuredAt != null &&
+                    ` (as of ${formatAge(batteryMeasuredAt)})`}
+                  . A flat sensor stops reporting, and moisture gating then
+                  waters on a stale reading.
+                </p>
+              )}
+              <p className="mt-3 text-xs text-stone-400 dark:text-stone-500">
+                Gardena decides when the sensor measures; refreshing re-reads
+                what it has already reported.
+                {signalLevel != null && ` Signal ${signalLevel}%.`}
+              </p>
+              <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
                 {!sensorGateEnabled
                   ? "Moisture gating is off — schedules run regardless of the reading."
                   : gated.length === 0

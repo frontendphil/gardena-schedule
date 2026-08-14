@@ -36,7 +36,10 @@ in-memory mirror of the location. **Route loaders never call the Gardena API** �
 they read the in-memory cache and SQLite. Browsing the app costs nothing.
 
 Measured budget: ~360 requests/month for WebSocket reconnects, ~30 for token
-refreshes, plus one request per valve per run. Settings → *Gardena connection*
+refreshes, one request per valve per run, and one per press of the dashboard's
+*Refresh* button. That button re-reads what Gardena already holds (useful if the
+socket has gone quiet); it cannot make the sensor take a new measurement, because
+the API has no command for that — `SENSOR_CONTROL` is rejected outright. Settings → *Gardena connection*
 shows the live request count for the running process.
 
 ## Features
@@ -53,6 +56,7 @@ shows the live request count for the running process.
 | **Moisture gating** | With the soil sensor enabled, a sprinkler is skipped when the reading is at or above its target. Re-checked before every sprinkler, so a long run reacts to the soil as it goes. |
 | **Per-sprinkler targets** | Any sprinkler can override the global moisture target — global 20%, but 30% for the hedge. |
 | **Run history** | Every run records what watered, what was skipped and why. |
+| **Sensor health** | The dashboard shows soil moisture, soil temperature, sensor battery and how old the reading is, and warns below 30% battery — a flat sensor stops reporting and moisture gating would then water on a stale reading. |
 
 ### Recurrence
 

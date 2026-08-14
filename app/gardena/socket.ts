@@ -139,6 +139,17 @@ const connect = async (): Promise<void> => {
   }
 }
 
+/**
+ * Pulls the full location over REST and folds it into the store.
+ *
+ * The WebSocket already pushes every change, so this exists for the case where
+ * the socket has silently stopped delivering. It costs one API request against
+ * the monthly budget, which is why it is user-initiated rather than polled.
+ */
+export const resyncFromRest = async () => {
+  await seedFromRest(await resolveLocationId())
+}
+
 /** How long the first connection may take before the app serves anyway. */
 const FIRST_CONNECT_TIMEOUT_MS = 10_000
 

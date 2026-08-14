@@ -96,6 +96,12 @@ export class Device {
   readonly name: string
   readonly modelType: string
   readonly online: boolean
+  /** Percentage, or null for a mains-powered device. */
+  readonly batteryLevel: number | null
+  readonly batteryState: string | null
+  readonly batteryMeasuredAt: Date | null
+  /** Radio link quality, percentage. */
+  readonly rfLinkLevel: number | null
 
   constructor(id: string, attributes: unknown) {
     const parsed = commonAttributes.parse(attributes)
@@ -104,6 +110,22 @@ export class Device {
     this.name = parsed.name?.value ?? "Unnamed device"
     this.modelType = parsed.modelType?.value ?? "Unknown"
     this.online = parsed.rfLinkState?.value === "ONLINE"
+    this.batteryState = parsed.batteryState?.value ?? null
+    this.rfLinkLevel = parsed.rfLinkLevel?.value ?? null
+
+    // Mains-powered devices report NO_BATTERY and no level at all.
+    this.batteryLevel =
+      this.batteryState === "NO_BATTERY"
+        ? null
+        : (parsed.batteryLevel?.value ?? null)
+
+    const timestamp = parsed.batteryLevel?.timestamp
+    this.batteryMeasuredAt = timestamp ? new Date(timestamp) : null
+  }
+
+  /** True when the device runs on batteries at all. */
+  get hasBattery() {
+    return this.batteryLevel != null
   }
 }
 

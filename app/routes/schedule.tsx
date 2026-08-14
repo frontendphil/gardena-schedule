@@ -704,7 +704,12 @@ export default function ScheduleEditor({
           <EmptyState title="No sprinklers in this schedule" />
         ) : (
           <ol className="space-y-2">
-            {timeline.map((step, index) => (
+            {timeline.map((step, index) => {
+              const grouped = step.groupSize > 1
+              const firstOfGroup = !step.startsWithPrevious
+              const lastOfGroup = timeline[index + 1]?.group !== step.group
+
+              return (
               <li
                 key={step.id}
                 onDragOver={(event) => {
@@ -717,16 +722,20 @@ export default function ScheduleEditor({
                   persistOrder()
                 }}
                 className={cx(
-                  "flex flex-wrap items-center gap-3 border p-3 transition-colors",
-                  // Members of a parallel group are visually welded together, so
-                  // "these two run at once" is legible without reading times.
-                  step.startsWithPrevious
-                    ? "-mt-2 rounded-b-lg border-t-0"
-                    : "rounded-t-lg",
-                  step.groupSize === 1 && "rounded-lg",
-                  index === timeline.length - 1 && "rounded-b-lg",
+                  // Fixed columns rather than flex: the trailing control differs
+                  // between the first row and the rest, and with flex that pushed
+                  // every duration box to a different x.
+                  "grid grid-cols-[1.25rem_8rem_1fr] items-center gap-x-3 gap-y-2 border p-3 transition-colors",
+                  "sm:grid-cols-[1.25rem_8rem_1fr_7rem_10rem_2rem]",
+                  // A parallel group reads as one block: tinted, joined, and
+                  // carrying a solid accent rail down its left edge.
+                  grouped && "border-l-4 border-l-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/30",
+                  grouped && !firstOfGroup && "-mt-2 border-t-0",
+                  grouped && firstOfGroup && "rounded-t-lg",
+                  grouped && lastOfGroup && "rounded-b-lg",
+                  !grouped && "rounded-lg",
                   draggingId === step.id
-                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40"
+                    ? "border-emerald-500 bg-emerald-100 dark:bg-emerald-900/50"
                     : "border-stone-200 dark:border-stone-800"
                 )}
               >
@@ -746,20 +755,20 @@ export default function ScheduleEditor({
                   ⠿
                 </span>
 
-                <span className="flex w-32 shrink-0 items-center gap-1 font-mono text-sm tabular-nums text-stone-500 dark:text-stone-400">
-                  <span aria-hidden className="w-3 text-emerald-600">
-                    {step.startsWithPrevious ? "⤷" : ""}
-                  </span>
-                  <span className="whitespace-nowrap">
-                    {step.startsAt}–{step.endsAt}
-                  </span>
+                <span className="whitespace-nowrap font-mono text-sm tabular-nums text-stone-500 dark:text-stone-400">
+                  {step.startsAt}–{step.endsAt}
                 </span>
 
-                <span className="min-w-0 flex-1 truncate font-medium">
-                  {step.name}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">{step.name}</span>
+                  {grouped && firstOfGroup && (
+                    <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">
+                      {step.groupSize} at once
+                    </span>
+                  )}
                 </span>
 
-                <Form method="post" className="flex items-center gap-1">
+                <Form method="post" className="flex items-center gap-1 justify-self-start">
                   <input type="hidden" name="intent" value="set-duration" />
                   <input type="hidden" name="stepId" value={step.id} />
                   <Input
@@ -783,17 +792,13 @@ export default function ScheduleEditor({
                   </span>
                 </Form>
 
-                <div className="flex items-center gap-1">
-                  {index === 0 && (
-                    <span
-                      aria-hidden
-                      className="hidden pr-1 text-xs text-stone-400 sm:inline"
-                    >
+                <div className="flex items-center justify-end gap-2">
+                  {index === 0 ? (
+                    <span className="text-xs text-stone-400 dark:text-stone-500">
                       starts the run
                     </span>
-                  )}
-                  {index > 0 && (
-                    <Form method="post" className="flex items-center gap-2 pr-1">
+                  ) : (
+                    <Form method="post" className="flex items-center gap-2">
                       <input
                         type="hidden"
                         name="intent"
@@ -812,20 +817,22 @@ export default function ScheduleEditor({
                     </Form>
                   )}
 
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="remove-step" />
-                    <input type="hidden" name="stepId" value={step.id} />
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      aria-label={`Remove ${step.name}`}
-                    >
-                      ✕
-                    </Button>
-                  </Form>
                 </div>
+
+                <Form method="post" className="justify-self-end">
+                  <input type="hidden" name="intent" value="remove-step" />
+                  <input type="hidden" name="stepId" value={step.id} />
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    aria-label={`Remove ${step.name}`}
+                  >
+                    ✕
+                  </Button>
+                </Form>
               </li>
-            ))}
+              )
+            })}
           </ol>
         )}
 
