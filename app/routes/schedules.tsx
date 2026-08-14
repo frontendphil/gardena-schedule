@@ -9,8 +9,20 @@ import {
   settings as settingsTable,
   valves as valvesTable,
 } from "../db/schema"
-import { buildPlan, formatRecurrence, getNextOccurrence } from "../scheduler/plan"
-import { formatZonedTime, getLocalDateKey } from "../scheduler/time"
+import { SERIES_COUNT, Timeline } from "../components/timeline"
+import {
+  buildPlan,
+  coversDate,
+  displayName,
+  formatRecurrence,
+  getNextOccurrence,
+} from "../scheduler/plan"
+import {
+  formatZonedTime,
+  getLocalDateKey,
+  getZonedParts,
+  parseTimeOfDay,
+} from "../scheduler/time"
 import type { Route } from "./+types/schedules"
 
 export const loader = async () => {
@@ -50,7 +62,110 @@ export const loader = async () => {
       }
     })
 
-  return { schedules }
+  const today = getLocalDateKey(now, settings.timezone)
+  const nowParts = getZonedParts(now, settings.timezone)
+
+  // Everything that actually runs today, laid out on a shared clock so overlaps
+  // are visible. Only enabled schedules whose recurrence covers today qualify.
+  const activeToday = db
+    .select()
+    .from(schedulesTable)
+    .where(eq(schedulesTable.enabled, true))
+    .all()
+    .filter((schedule) => coversDate(schedule, today, settings.timezone))
+    .map((schedule) => {
+      const plan = buildPlan(
+        schedule,
+        allSteps.filter((step) => step.scheduleId === schedule.id),
+        valvesById,
+        today,
+        settings.timezone
+      )
+
+      const { hour, minute } = parseTimeOfDay(schedule.startTime)
+      const startMinutes = hour * 60 + minute
+
+      let offset = 0
+      const steps = plan.steps.map((planned) => {
+        const from = startMinutes + offset
+        offset += planned.step.durationMinutes
+
+        return {
+          name: displayName(planned.valve),
+          startMinutes: from,
+          endMinutes: startMinutes + offset,
+          durationMinutes: planned.step.durationMinutes,
+          skipped: false,
+        }
+      })
+
+      return {
+        id: schedule.id,
+        name: schedule.name,
+        startMinutes,
+        endMinutes: startMinutes + plan.totalMinutes,
+        totalMinutes: plan.totalMinutes,
+        steps,
+      }
+    })
+    .filter((row) => row.steps.length > 0)
+    .sort((a, b) => a.startMinutes - b.startMinutes)
+
+  /**
+   * Only one run executes at a time, so a schedule that comes due while another
+   * is still watering is skipped for the day rather than queued. Flagging the
+   * overlap here is the only warning the user would ever get.
+   */
+  const conflicting = new Set<number>()
+
+  activeToday.forEach((row, index) => {
+    for (const other of activeToday.slice(index + 1)) {
+      if (other.startMinutes < row.endMinutes) {
+        conflicting.add(row.id)
+        conflicting.add(other.id)
+      }
+    }
+  })
+
+  const timeline =
+    activeToday.length === 0
+      ? null
+      : {
+          rows: activeToday.map((row, index) => ({
+            id: row.id,
+            name: row.name,
+            series: index % SERIES_COUNT,
+            startMinutes: row.startMinutes,
+            endMinutes: row.endMinutes,
+            label: `${row.totalMinutes} min`,
+            steps: row.steps,
+            conflict: conflicting.has(row.id),
+          })),
+          // Pad to whole hours so the axis reads cleanly, with a 3h minimum so a
+          // single short schedule does not stretch edge to edge.
+          ...(() => {
+            const first = Math.min(...activeToday.map((r) => r.startMinutes))
+            const last = Math.max(...activeToday.map((r) => r.endMinutes))
+            let start = Math.floor(first / 60) * 60
+            let end = Math.ceil(last / 60) * 60
+
+            while (end - start < 180) {
+              if (start > 0) start -= 60
+              else end += 60
+            }
+
+            return { windowStart: start, windowEnd: end }
+          })(),
+          nowMinutes: nowParts.hour * 60 + nowParts.minute,
+        }
+
+  return {
+    schedules,
+    timeline,
+    conflicts: activeToday
+      .filter((row) => conflicting.has(row.id))
+      .map((row) => row.name),
+  }
 }
 
 export const action = async ({ request }: Route.ActionArgs) => {
@@ -88,11 +203,39 @@ export const action = async ({ request }: Route.ActionArgs) => {
 }
 
 export default function Schedules({ loaderData, actionData }: Route.ComponentProps) {
-  const { schedules } = loaderData
+  const { schedules, timeline, conflicts } = loaderData
   const submit = useSubmit()
 
   return (
     <>
+      <Card
+        title="Today"
+        description={
+          timeline == null
+            ? undefined
+            : "Every schedule running today, on a shared clock."
+        }
+      >
+        {timeline == null ? (
+          <EmptyState title="Nothing runs today">
+            No enabled schedule covers today, or none has sprinklers yet.
+          </EmptyState>
+        ) : (
+          <>
+            <Timeline data={timeline} />
+
+            {conflicts.length > 0 && (
+              <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                <strong>{conflicts.join(" and ")}</strong> overlap. Only one
+                schedule runs at a time, so whichever comes second will be
+                skipped today rather than waiting its turn. Move its start time
+                past the end of the first.
+              </p>
+            )}
+          </>
+        )}
+      </Card>
+
       <Card
         title="Schedules"
         description="Each schedule waters its sprinklers one after another, starting at its start time."

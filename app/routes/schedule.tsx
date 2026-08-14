@@ -1,6 +1,6 @@
 import { and, eq, gt, lt, sql } from "drizzle-orm"
 import { useMemo, useState } from "react"
-import { Form, href, redirect, useSubmit } from "react-router"
+import { Form, href, redirect, useFetcher, useSubmit } from "react-router"
 
 import {
   Button,
@@ -20,7 +20,7 @@ import {
   valves as valvesTable,
 } from "../db/schema"
 import { getValves } from "../gardena/store"
-import { displayName } from "../scheduler/plan"
+import { byDisplayName, displayName } from "../scheduler/plan"
 import {
   ALL_DAYS,
   DAY_NAMES,
@@ -45,11 +45,7 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
   if (schedule == null) throw new Response("Not found", { status: 404 })
 
   const settings = db.select().from(settingsTable).get()!
-  const valveRows = db
-    .select()
-    .from(valvesTable)
-    .orderBy(valvesTable.sortOrder)
-    .all()
+  const valveRows = db.select().from(valvesTable).all().sort(byDisplayName)
   const valvesById = new Map(valveRows.map((row) => [row.id, row]))
 
   const steps = db
@@ -223,8 +219,8 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     const toAdd = db
       .select()
       .from(valvesTable)
-      .orderBy(valvesTable.sortOrder)
       .all()
+      .sort(byDisplayName)
       .filter(
         (valve) =>
           !valve.hidden && !used.has(valve.id) && reachable.has(valve.id)
@@ -300,6 +296,39 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     return null
   }
 
+  if (intent === "reorder-steps") {
+    const requested = String(formData.get("stepIds") ?? "")
+      .split(",")
+      .map(Number)
+      .filter((id) => Number.isInteger(id))
+
+    const owned = new Set(
+      db
+        .select({ id: scheduleStepsTable.id })
+        .from(scheduleStepsTable)
+        .where(eq(scheduleStepsTable.scheduleId, scheduleId))
+        .all()
+        .map((step) => step.id)
+    )
+
+    // Ignore anything that is not a step of this schedule, and refuse a partial
+    // list — a dropped id would otherwise silently lose its position.
+    const ordered = requested.filter((id) => owned.has(id))
+
+    if (ordered.length !== owned.size) return null
+
+    db.transaction((tx) => {
+      ordered.forEach((id, position) => {
+        tx.update(scheduleStepsTable)
+          .set({ position })
+          .where(eq(scheduleStepsTable.id, id))
+          .run()
+      })
+    })
+
+    return null
+  }
+
   if (intent === "move-step") {
     const stepId = Number(formData.get("stepId"))
     const direction = formData.get("direction") === "up" ? "up" : "down"
@@ -363,6 +392,7 @@ export default function ScheduleEditor({
 }: Route.ComponentProps) {
   const { schedule, steps, available, today } = loaderData
   const submit = useSubmit()
+  const reorderFetcher = useFetcher()
 
   const [startTime, setStartTime] = useState(schedule.startTime)
   const [recurrence, setRecurrence] = useState(schedule.recurrence)
@@ -370,19 +400,66 @@ export default function ScheduleEditor({
     Object.fromEntries(steps.map((step) => [step.id, step.durationMinutes]))
   )
 
+  // Dragging reorders this list immediately and persists on drop, so the
+  // timeline updates under the cursor instead of after a round trip.
+  const [order, setOrder] = useState(() => steps.map((step) => step.id))
+  const [draggingId, setDraggingId] = useState<number | null>(null)
+
+  // Adopt the server's order whenever the set or sequence of steps changes —
+  // adding, removing or a completed drag. Comparing during render (rather than
+  // in an effect) avoids rendering one frame of stale order.
+  const serverOrder = steps.map((step) => step.id).join(",")
+  const [seenOrder, setSeenOrder] = useState(serverOrder)
+
+  if (serverOrder !== seenOrder && reorderFetcher.state === "idle") {
+    setSeenOrder(serverOrder)
+    setOrder(steps.map((step) => step.id))
+  }
+
+  const stepsById = new Map(steps.map((step) => [step.id, step]))
+  const orderedSteps = order
+    .map((id) => stepsById.get(id))
+    .filter((step) => step != null)
+
+  const moveStep = (fromId: number, toId: number) => {
+    setOrder((current) => {
+      const from = current.indexOf(fromId)
+      const to = current.indexOf(toId)
+
+      if (from === -1 || to === -1 || from === to) return current
+
+      const next = [...current]
+      next.splice(to, 0, ...next.splice(from, 1))
+
+      return next
+    })
+  }
+
+  const persistOrder = () => {
+    setDraggingId(null)
+
+    if (order.join(",") === serverOrder) return
+
+    reorderFetcher.submit(
+      { intent: "reorder-steps", stepIds: order.join(",") },
+      { method: "post" }
+    )
+  }
+
   // Requirement 1: the user authors order and duration; every clock time below is
   // derived, and derived live so the effect of a change is immediately visible.
   const timeline = useMemo(() => {
     let offset = 0
 
-    return steps.map((step) => {
+    return orderedSteps.map((step) => {
       const minutes = durations[step.id] ?? step.durationMinutes
       const startsAt = addMinutes(startTime, offset)
       offset += minutes
 
       return { ...step, minutes, startsAt, endsAt: addMinutes(startTime, offset) }
     })
-  }, [steps, durations, startTime])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderedSteps.map((step) => step.id).join(","), steps, durations, startTime])
 
   const totalMinutes = timeline.reduce((sum, step) => sum + step.minutes, 0)
 
@@ -528,8 +605,38 @@ export default function ScheduleEditor({
             {timeline.map((step, index) => (
               <li
                 key={step.id}
-                className="flex flex-wrap items-center gap-3 rounded-lg border border-stone-200 p-3 dark:border-stone-800"
+                onDragOver={(event) => {
+                  if (draggingId == null) return
+                  event.preventDefault()
+                  moveStep(draggingId, step.id)
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  persistOrder()
+                }}
+                className={cx(
+                  "flex flex-wrap items-center gap-3 rounded-lg border p-3 transition-colors",
+                  draggingId === step.id
+                    ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40"
+                    : "border-stone-200 dark:border-stone-800"
+                )}
               >
+                <span
+                  draggable
+                  onDragStart={(event) => {
+                    setDraggingId(step.id)
+                    event.dataTransfer.effectAllowed = "move"
+                    // Firefox ignores a drag that carries no data.
+                    event.dataTransfer.setData("text/plain", String(step.id))
+                  }}
+                  onDragEnd={persistOrder}
+                  aria-hidden
+                  title="Drag to reorder"
+                  className="cursor-grab select-none px-1 text-stone-400 active:cursor-grabbing dark:text-stone-500"
+                >
+                  ⠿
+                </span>
+
                 <span className="w-24 shrink-0 font-mono text-sm tabular-nums text-stone-500 dark:text-stone-400">
                   {step.startsAt}–{step.endsAt}
                 </span>

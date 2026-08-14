@@ -35,7 +35,6 @@ export const valves = sqliteTable("valves", {
   /** Local rename. Falls back to `apiName` when null. */
   displayName: text("display_name"),
   hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
-  sortOrder: integer("sort_order").notNull().default(0),
   /** Requirement 6: null means "inherit `settings.globalMoistureTarget`". */
   moistureTarget: integer("moisture_target"),
   lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),

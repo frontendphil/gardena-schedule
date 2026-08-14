@@ -110,31 +110,26 @@ export const Field = ({
 /**
  * A checkbox styled as a switch. Submits through the enclosing form, so every
  * toggle in the app is a plain form post and works without JavaScript.
+ *
+ * The appearance is driven by the real checkbox's `:checked` state rather than
+ * by a `checked` prop, so it animates identically whether the caller controls it
+ * (`checked` + `onChange`) or leaves it uncontrolled (`defaultChecked` behind a
+ * Save button). Reading the prop instead would leave every uncontrolled toggle
+ * looking permanently off, however much the user clicked it.
  */
-export const Toggle = ({
-  checked,
-  className,
-  ...props
-}: ComponentProps<"input">) => (
+export const Toggle = ({ className, ...props }: ComponentProps<"input">) => (
   <span
     className={cx(
-      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-      checked ? "bg-emerald-600" : "bg-stone-300 dark:bg-stone-700",
+      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-stone-300 transition-colors has-checked:bg-emerald-600 dark:bg-stone-700 dark:has-checked:bg-emerald-600",
       className
     )}
   >
     <input
       {...props}
       type="checkbox"
-      checked={checked}
-      className="absolute inset-0 z-10 cursor-pointer opacity-0"
+      className="peer absolute inset-0 z-10 cursor-pointer opacity-0"
     />
-    <span
-      className={cx(
-        "pointer-events-none ml-0.5 inline-block h-5 w-5 rounded-full bg-white shadow transition-transform",
-        checked && "translate-x-5"
-      )}
-    />
+    <span className="pointer-events-none ml-0.5 inline-block h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
   </span>
 )
 

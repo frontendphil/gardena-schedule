@@ -8,7 +8,7 @@ import {
   valves as valvesTable,
 } from "../db/schema"
 import { getValves } from "../gardena/store"
-import { displayName } from "../scheduler/plan"
+import { byDisplayName, displayName } from "../scheduler/plan"
 import type { Route } from "./+types/sprinklers"
 
 export const loader = async () => {
@@ -21,8 +21,8 @@ export const loader = async () => {
   const valves = db
     .select()
     .from(valvesTable)
-    .orderBy(valvesTable.sortOrder)
     .all()
+    .sort(byDisplayName)
     .map((valve) => ({
       id: valve.id,
       name: displayName(valve),
@@ -78,44 +78,6 @@ export const action = async ({ request }: Route.ActionArgs) => {
     return null
   }
 
-  if (intent === "move") {
-    const direction = formData.get("direction") === "up" ? -1 : 1
-
-    // Reorder within the valves actually shown. Ordering against the full list
-    // would let a visible valve swap places with a disabled one and appear to do
-    // nothing.
-    const visible = db
-      .select()
-      .from(valvesTable)
-      .where(eq(valvesTable.hidden, false))
-      .orderBy(valvesTable.sortOrder)
-      .all()
-
-    const index = visible.findIndex((valve) => valve.id === valveId)
-    const target = index + direction
-
-    if (index === -1 || target < 0 || target >= visible.length) return null
-
-    db.transaction((tx) => {
-      // Renumber the visible valves over the sort positions they already
-      // occupy, which leaves the disabled ones exactly where they are.
-      const positions = visible.map((valve) => valve.sortOrder).sort((a, b) => a - b)
-
-      const reordered = [...visible]
-      const [moved] = reordered.splice(index, 1)
-      reordered.splice(target, 0, moved)
-
-      reordered.forEach((valve, slot) => {
-        tx.update(valvesTable)
-          .set({ sortOrder: positions[slot] })
-          .where(eq(valvesTable.id, valve.id))
-          .run()
-      })
-    })
-
-    return null
-  }
-
   return null
 }
 
@@ -150,7 +112,7 @@ export default function Sprinklers({ loaderData }: Route.ComponentProps) {
     <>
       <Card
         title="Sprinklers"
-        description="Rename, reorder, and set a moisture target that differs from the global one."
+        description="Rename and set a moisture target that differs from the global one. Listed alphabetically; order only matters inside a schedule."
       >
         {inUse.length === 0 ? (
           <EmptyState title="No sprinklers in use">
@@ -160,7 +122,7 @@ export default function Sprinklers({ loaderData }: Route.ComponentProps) {
           </EmptyState>
         ) : (
           <ul className="space-y-3">
-            {inUse.map((valve, index) => (
+            {inUse.map((valve) => (
               <li
                 key={valve.id}
                 className="rounded-lg border border-stone-200 p-4 dark:border-stone-800"
@@ -175,37 +137,7 @@ export default function Sprinklers({ loaderData }: Route.ComponentProps) {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1">
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="move" />
-                      <input type="hidden" name="valveId" value={valve.id} />
-                      <input type="hidden" name="direction" value="up" />
-                      <Button
-                        type="submit"
-                        variant="ghost"
-                        disabled={index === 0}
-                        aria-label={`Move ${valve.name} up`}
-                      >
-                        ↑
-                      </Button>
-                    </Form>
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="move" />
-                      <input type="hidden" name="valveId" value={valve.id} />
-                      <input type="hidden" name="direction" value="down" />
-                      <Button
-                        type="submit"
-                        variant="ghost"
-                        disabled={index === inUse.length - 1}
-                        aria-label={`Move ${valve.name} down`}
-                      >
-                        ↓
-                      </Button>
-                    </Form>
-                    <span className="ml-2">
-                      <DisableToggle valve={valve} onToggle={onToggle} />
-                    </span>
-                  </div>
+                  <DisableToggle valve={valve} onToggle={onToggle} />
                 </div>
 
                 <Form

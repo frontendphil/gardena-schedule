@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest"
 import type { Schedule, ScheduleStep, ValveRow } from "../db/schema"
 import {
   buildPlan,
+  byDisplayName,
   coversDate,
+  displayName,
   getNextOccurrence,
   isDue,
   resolveMoistureTarget,
@@ -37,7 +39,6 @@ const valve = (id: string, overrides: Partial<ValveRow> = {}): ValveRow => ({
   apiName: `API ${id}`,
   displayName: null,
   hidden: false,
-  sortOrder: 0,
   moistureTarget: null,
   lastSeenAt: null,
   ...overrides,
@@ -170,6 +171,49 @@ describe("buildPlan", () => {
 
     expect(plan.steps.map((s) => s.valve.id)).toEqual(["a:1", "a:3"])
     expect(plan.totalMinutes).toBe(25)
+  })
+})
+
+describe("byDisplayName", () => {
+  const sorted = (valves: ValveRow[]) =>
+    [...valves].sort(byDisplayName).map((v) => displayName(v))
+
+  it("sorts alphabetically, using the local rename when there is one", () => {
+    expect(
+      sorted([
+        valve("a:1", { apiName: "Vorgarten" }),
+        valve("a:2", { apiName: "Hochbeete" }),
+        valve("a:3", { apiName: "Zzz", displayName: "Beet" }),
+      ])
+    ).toEqual(["Beet", "Hochbeete", "Vorgarten"])
+  })
+
+  it("ignores the trailing spaces Gardena stores in names", () => {
+    expect(
+      sorted([
+        valve("a:1", { apiName: "Hecke Einfahrt " }),
+        valve("a:2", { apiName: "Hafen" }),
+      ])
+    ).toEqual(["Hafen", "Hecke Einfahrt "])
+  })
+
+  it("orders numbered valves naturally rather than lexically", () => {
+    expect(
+      sorted([
+        valve("a:1", { apiName: "Valve 10" }),
+        valve("a:2", { apiName: "Valve 2" }),
+      ])
+    ).toEqual(["Valve 2", "Valve 10"])
+  })
+
+  it("sorts umlauts next to their base letter", () => {
+    expect(
+      sorted([
+        valve("a:1", { apiName: "Zaun" }),
+        valve("a:2", { apiName: "Über" }),
+        valve("a:3", { apiName: "Apfel" }),
+      ])
+    ).toEqual(["Apfel", "Über", "Zaun"])
   })
 })
 

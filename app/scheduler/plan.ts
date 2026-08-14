@@ -32,6 +32,21 @@ export type Plan = {
 export const displayName = (valve: ValveRow) => valve.displayName ?? valve.apiName
 
 /**
+ * Sprinklers are listed alphabetically everywhere; only their order *within a
+ * schedule* is meaningful, and that is stored per step.
+ *
+ * Names are trimmed because Gardena happily stores trailing spaces, and compared
+ * numerically so `Valve 2` sorts before `Valve 10`.
+ */
+export const byDisplayName = (a: ValveRow, b: ValveRow) =>
+  displayName(a)
+    .trim()
+    .localeCompare(displayName(b).trim(), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+
+/**
  * Whether a schedule covers a given local calendar day.
  *
  * `weekly` tests the weekday bitmask. `interval` counts whole days from

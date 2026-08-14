@@ -1,0 +1,1 @@
+ALTER TABLE `valves` DROP COLUMN `sort_order`;

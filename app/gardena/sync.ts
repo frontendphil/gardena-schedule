@@ -38,8 +38,6 @@ export const syncValves = () => {
   const now = new Date()
 
   db.transaction((tx) => {
-    let nextSortOrder = existing.size
-
     for (const valve of reported) {
       if (existing.has(valve.id)) {
         tx.update(valves)
@@ -52,7 +50,6 @@ export const syncValves = () => {
             id: valve.id,
             apiName: valve.name,
             hidden: looksUnused(valve.name),
-            sortOrder: nextSortOrder++,
             lastSeenAt: now,
           })
           .run()
