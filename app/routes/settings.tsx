@@ -9,6 +9,9 @@ import { getConnectionState, getSensors } from "../gardena/store"
 import { displayName } from "../scheduler/plan"
 import type { Route } from "./+types/settings"
 
+/** Process start, used to show how long the current build has been running. */
+const START_TIME = new Date()
+
 export const loader = async () => {
   const settings = db.select().from(settingsTable).get()!
   const sensors = getSensors()
@@ -38,6 +41,8 @@ export const loader = async () => {
       lastError: connection.lastError,
     },
     requests: getRequestStats(),
+    version: process.env.APP_VERSION ?? "dev",
+    startedAt: START_TIME,
   }
 }
 
@@ -75,7 +80,8 @@ export const action = async ({ request }: Route.ActionArgs) => {
 }
 
 export default function Settings({ loaderData, actionData }: Route.ComponentProps) {
-  const { settings, sensors, overrides, connection, requests } = loaderData
+  const { settings, sensors, overrides, connection, requests, version, startedAt } =
+    loaderData
 
   return (
     <>
@@ -206,6 +212,16 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
               API requests this process
             </dt>
             <dd className="mt-1 tabular-nums">{requests.total}</dd>
+          </div>
+          <div>
+            <dt className="text-stone-500 dark:text-stone-400">Build</dt>
+            <dd className="mt-1">
+              <span className="tabular-nums">{version}</span>
+              <span className="text-stone-500 dark:text-stone-400">
+                {" · running since "}
+                {new Date(startedAt).toLocaleString()}
+              </span>
+            </dd>
           </div>
           {connection.lastError != null && (
             <div className="sm:col-span-2">
