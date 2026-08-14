@@ -1,58 +1,28 @@
 import {
-  href,
-  isRouteErrorResponse,
   Links,
   Meta,
   Outlet,
-  redirect,
   Scripts,
   ScrollRestoration,
+  isRouteErrorResponse,
 } from "react-router"
 
 import type { Route } from "./+types/root"
 import "./app.css"
-import { getSession } from "./routes/session"
-import { api } from "./routes/api"
-import { schema, Valve } from "./routes/model"
 
-export const loader = async ({ request }: Route.LoaderArgs) => {
-  const session = await getSession(request.headers.get("Cookie"))
-
-  if (!session.has("token")) {
-    return redirect(href("/refresh-session"))
-  }
-
-  const locations = await api(session, "/locations")
-  const locationDetails = await api(
-    session,
-    `/locations/${locations.data[0].id}`
-  )
-
-  const valves = schema
-    .parse(locationDetails.included)
-    .reduce<Valve[]>((result, item) => {
-      if (item.type === "VALVE") {
-        return [...result, new Valve(item)]
-      }
-
-      return result
-    }, [])
-    .filter((valve) => valve.connected)
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  return { valves }
-}
+export const meta: Route.MetaFunction = () => [{ title: "Garden" }]
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="h-full">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="color-scheme" content="light dark" />
         <Meta />
         <Links />
       </head>
-      <body>
+      <body className="h-full bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100">
         {children}
         <ScrollRestoration />
         <Scripts />
@@ -61,38 +31,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
   )
 }
 
-export default function App({ loaderData: { valves } }: Route.ComponentProps) {
-  return (
-    <div className="flex flex-col">
-      {valves.map((valve) => (
-        <div key={valve.id}>{valve.name}</div>
-      ))}
-    </div>
-  )
+export default function App() {
+  return <Outlet />
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!"
+  let message = "Something went wrong"
   let details = "An unexpected error occurred."
   let stack: string | undefined
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error"
+    message = error.status === 404 ? "Not found" : `Error ${error.status}`
     details =
       error.status === 404
         ? "The requested page could not be found."
         : error.statusText || details
-  } else if (import.meta.env.DEV && error && error instanceof Error) {
+  } else if (error instanceof Error) {
     details = error.message
-    stack = error.stack
+    if (import.meta.env.DEV) stack = error.stack
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
+    <main className="mx-auto max-w-2xl p-8">
+      <h1 className="text-2xl font-semibold">{message}</h1>
+      <p className="mt-2 text-stone-600 dark:text-stone-400">{details}</p>
       {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
+        <pre className="mt-6 overflow-x-auto rounded-lg bg-stone-100 p-4 text-xs dark:bg-stone-900">
           <code>{stack}</code>
         </pre>
       )}

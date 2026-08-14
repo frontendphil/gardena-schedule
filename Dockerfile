@@ -1,22 +1,31 @@
-FROM node:20-alpine AS development-dependencies-env
-COPY . /app
+# Node 22+ has a stable global WebSocket, so the Gardena socket needs no `ws` dependency.
+FROM node:22-alpine AS base
+RUN corepack enable
 WORKDIR /app
-RUN npm ci
 
-FROM node:20-alpine AS production-dependencies-env
-COPY ./package.json package-lock.json /app/
-WORKDIR /app
-RUN npm ci --omit=dev
+FROM base AS development-dependencies-env
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
-FROM node:20-alpine AS build-env
-COPY . /app/
-COPY --from=development-dependencies-env /app/node_modules /app/node_modules
-WORKDIR /app
-RUN npm run build
+FROM base AS production-dependencies-env
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --prod
 
-FROM node:20-alpine
-COPY ./package.json package-lock.json /app/
-COPY --from=production-dependencies-env /app/node_modules /app/node_modules
-COPY --from=build-env /app/build /app/build
-WORKDIR /app
-CMD ["npm", "run", "start"]
+FROM base AS build-env
+COPY . .
+COPY --from=development-dependencies-env /app/node_modules ./node_modules
+RUN pnpm run build
+
+FROM base
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY --from=production-dependencies-env /app/node_modules ./node_modules
+COPY --from=build-env /app/build ./build
+# Migrations are applied at boot, so they have to ship with the image.
+COPY drizzle ./drizzle
+
+# SQLite lives on a mounted volume; without one, schedules are lost on redeploy.
+ENV DATABASE_PATH=/data/gardena.db
+VOLUME /data
+
+EXPOSE 3000
+CMD ["pnpm", "run", "start"]
