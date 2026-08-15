@@ -22,6 +22,16 @@ export const settings = sqliteTable("settings", {
 })
 
 /**
+ * Gardena groups devices under locations (usually one per property). Most
+ * accounts have a single location and never see this; accounts with several get
+ * their sprinklers labelled so two "Terrace" valves stay tellable apart.
+ */
+export const locations = sqliteTable("locations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+})
+
+/**
  * One row per Gardena VALVE service. The Gardena `DEVICE`/`VALVE_SET` layer is
  * deliberately not modelled — requirement 2 is that the UI only ever sees valves.
  *
@@ -31,6 +41,8 @@ export const settings = sqliteTable("settings", {
 export const valves = sqliteTable("valves", {
   /** Gardena service id, `<deviceId>:<1-6>`. Stable across reboots. */
   id: text("id").primaryKey(),
+  /** Null only for rows written before multi-location support existed. */
+  locationId: text("location_id"),
   apiName: text("api_name").notNull(),
   /** Local rename. Falls back to `apiName` when null. */
   displayName: text("display_name"),

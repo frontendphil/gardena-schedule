@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # The add-on manifest is only correct if it stays in step with the code,
+      # and a mismatch here is invisible until an install fails.
+      - name: Check add-on manifest
+        run: |
+          version=$(grep -E '^version:' gardena-scheduler/config.yaml | sed 's/version:[[:space:]]*//' | tr -d '"')
+          test -n "$version" || { echo "gardena-scheduler/config.yaml has no version"; exit 1; }
+          test -f repository.yaml || { echo "repository.yaml missing"; exit 1; }
+          echo "add-on version $version"
+
+      # Migrations ship in the image and run at boot; a schema change without a
+      # generated migration would fail on someone else's data, not ours.
+      - name: Check migrations are up to date
+        run: |
+          pnpm exec drizzle-kit generate
+          # `git status --porcelain`, not `git diff`: a freshly generated
+          # migration is an *untracked* file, which git diff does not report.
+          drift=$(git status --porcelain -- drizzle)
+          if [ -n "$drift" ]; then
+            echo "Schema changed without a committed migration. Run: pnpm db:generate"
+            echo "$drift"
+            exit 1
+          fi

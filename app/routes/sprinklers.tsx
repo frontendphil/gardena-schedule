@@ -13,6 +13,7 @@ import {
 } from "../components/ui"
 import { db } from "../db"
 import {
+  locations as locationsTable,
   settings as settingsTable,
   valves as valvesTable,
 } from "../db/schema"
@@ -26,6 +27,13 @@ export const loader = async () => {
   // The Gardena `DEVICE` / `VALVE_SET` layer is intentionally not surfaced —
   // requirement 2 is that this screen is a flat list of sprinklers.
   const live = new Map(getValves().map((valve) => [valve.id, valve]))
+
+  // Only worth showing when an account actually spans several properties;
+  // otherwise it is noise on every row.
+  const locationNames = new Map(
+    db.select().from(locationsTable).all().map((row) => [row.id, row.name])
+  )
+  const showLocation = locationNames.size > 1
 
   const valves = db
     .select()
@@ -42,6 +50,10 @@ export const loader = async () => {
       connected: live.get(valve.id)?.connected ?? false,
       watering: live.get(valve.id)?.watering ?? false,
       known: live.has(valve.id),
+      location:
+        showLocation && valve.locationId != null
+          ? (locationNames.get(valve.locationId) ?? null)
+          : null,
     }))
 
   return {
@@ -149,6 +161,9 @@ export default function Sprinklers({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{valve.name}</span>
+                    {valve.location != null && (
+                      <Badge tone="neutral">{valve.location}</Badge>
+                    )}
                     {valve.watering && <Badge tone="active">Watering</Badge>}
                     {!valve.known && <Badge tone="neutral">Not reported</Badge>}
                     {valve.known && !valve.connected && (
@@ -227,8 +242,11 @@ export default function Sprinklers({
                 key={valve.id}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-stone-300 px-4 py-3 dark:border-stone-700"
               >
-                <span className="text-stone-500 dark:text-stone-400">
+                <span className="flex items-center gap-2 text-stone-500 dark:text-stone-400">
                   {valve.name}
+                  {valve.location != null && (
+                    <Badge tone="neutral">{valve.location}</Badge>
+                  )}
                 </span>
                 <DisableToggle valve={valve} onToggle={onToggle} />
               </li>

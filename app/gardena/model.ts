@@ -44,15 +44,17 @@ export const VALVE_ACTIVITY = {
 /** A Gardena valve as reported by the API, with the raw shape already resolved. */
 export class Valve {
   readonly id: string
+  readonly locationId: string
   readonly name: string
   readonly activity: string
   readonly state: string
   readonly lastErrorCode: string | null
 
-  constructor(id: string, attributes: unknown) {
+  constructor(id: string, attributes: unknown, locationId = "") {
     const parsed = valveAttributes.parse(attributes)
 
     this.id = id
+    this.locationId = locationId
     this.name = parsed.name?.value ?? "Unnamed valve"
     this.activity = parsed.activity?.value ?? VALVE_ACTIVITY.closed
     this.state = parsed.state?.value ?? "UNAVAILABLE"
@@ -93,6 +95,7 @@ export class Sensor {
 
 export class Device {
   readonly id: string
+  readonly locationId: string
   readonly name: string
   readonly modelType: string
   readonly online: boolean
@@ -103,10 +106,11 @@ export class Device {
   /** Radio link quality, percentage. */
   readonly rfLinkLevel: number | null
 
-  constructor(id: string, attributes: unknown) {
+  constructor(id: string, attributes: unknown, locationId = "") {
     const parsed = commonAttributes.parse(attributes)
 
     this.id = id
+    this.locationId = locationId
     this.name = parsed.name?.value ?? "Unnamed device"
     this.modelType = parsed.modelType?.value ?? "Unknown"
     this.online = parsed.rfLinkState?.value === "ONLINE"

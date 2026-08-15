@@ -16,6 +16,7 @@ import {
 } from "../components/ui"
 import { db } from "../db"
 import {
+  locations as locationsTable,
   scheduleSteps as scheduleStepsTable,
   schedules as schedulesTable,
   settings as settingsTable,
@@ -57,6 +58,16 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
   const valveRows = db.select().from(valvesTable).all().sort(byDisplayName)
   const valvesById = new Map(valveRows.map((row) => [row.id, row]))
 
+  // Two properties can easily both have a "Terrace"; label them only when the
+  // ambiguity actually exists.
+  const locationNames = new Map(
+    db.select().from(locationsTable).all().map((row) => [row.id, row.name])
+  )
+  const locationOf = (valve: (typeof valveRows)[number]) =>
+    locationNames.size > 1 && valve.locationId != null
+      ? (locationNames.get(valve.locationId) ?? null)
+      : null
+
   const steps = db
     .select()
     .from(scheduleStepsTable)
@@ -71,6 +82,9 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
       name: valvesById.has(step.valveId)
         ? displayName(valvesById.get(step.valveId)!)
         : "Unknown sprinkler",
+      location: valvesById.has(step.valveId)
+        ? locationOf(valvesById.get(step.valveId)!)
+        : null,
     }))
 
   const used = new Set(steps.map((step) => step.valveId))
@@ -92,7 +106,11 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
         (valve) =>
           !valve.hidden && !used.has(valve.id) && reachable.has(valve.id)
       )
-      .map((valve) => ({ id: valve.id, name: displayName(valve) })),
+      .map((valve) => ({
+        id: valve.id,
+        name: displayName(valve),
+        location: locationOf(valve),
+      })),
   }
 }
 
@@ -761,6 +779,11 @@ export default function ScheduleEditor({
 
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate font-medium">{step.name}</span>
+                  {step.location != null && (
+                    <span className="shrink-0 rounded-full bg-stone-200 px-2 py-0.5 text-xs text-stone-600 dark:bg-stone-700 dark:text-stone-300">
+                      {step.location}
+                    </span>
+                  )}
                   {grouped && firstOfGroup && (
                     <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">
                       {step.groupSize} at once

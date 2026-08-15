@@ -2,6 +2,8 @@ import { Device, Sensor, Valve, serviceMessage } from "./model"
 
 type ServiceRecord = {
   type: string
+  /** Which Gardena location this service belongs to. */
+  locationId: string
   attributes: Record<string, unknown>
 }
 
@@ -13,6 +15,24 @@ type ServiceRecord = {
  * partial updates, attributes are merged per service rather than replaced.
  */
 const services = new Map<string, ServiceRecord>()
+
+/** id -> display name, for labelling sprinklers when there is more than one. */
+const locations = new Map<string, string>()
+
+/**
+ * The `/locations` list and `/locations/{id}` detail can disagree about a
+ * location's name; the list carries the one the user set, so it wins.
+ */
+export const setLocationName = (
+  id: string,
+  name: string,
+  { authoritative = false } = {}
+) => {
+  if (!authoritative && locations.has(id)) return
+
+  locations.set(id, name)
+  notify()
+}
 
 let connectedAt: Date | null = null
 let lastMessageAt: Date | null = null
@@ -30,7 +50,7 @@ export const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener)
 }
 
-export const applyMessage = (raw: unknown) => {
+export const applyMessage = (raw: unknown, locationId: string) => {
   const parsed = serviceMessage.safeParse(raw)
 
   if (!parsed.success) return
@@ -40,11 +60,27 @@ export const applyMessage = (raw: unknown) => {
   // Relationship-only messages (DEVICE, LOCATION) carry no attributes.
   if (attributes == null) return
 
+  // A LOCATION names itself — and uniquely among the services, its `name` is a
+  // bare string rather than the usual `{ value, timestamp }` wrapper.
+  if (type === "LOCATION") {
+    const raw = (attributes as { name?: unknown }).name
+    const name =
+      typeof raw === "string"
+        ? raw
+        : ((raw as { value?: unknown })?.value ?? null)
+
+    if (typeof name === "string" && name !== "") setLocationName(id, name)
+
+    notify()
+    return
+  }
+
   const key = `${type}:${id}`
   const existing = services.get(key)
 
   services.set(key, {
     type,
+    locationId,
     attributes: { ...existing?.attributes, ...attributes },
   })
 
@@ -69,16 +105,20 @@ const recordsOfType = (type: string) =>
     .filter(([, record]) => record.type === type)
     .map(([key, record]) => ({
       id: key.slice(type.length + 1),
+      locationId: record.locationId,
       attributes: record.attributes,
     }))
 
 export const getValves = (): Valve[] =>
   recordsOfType("VALVE")
-    .map(({ id, attributes }) => new Valve(id, attributes))
+    .map(({ id, locationId, attributes }) => new Valve(id, attributes, locationId))
     .sort((a, b) => a.id.localeCompare(b.id))
 
 export const getSensors = (): Sensor[] =>
   recordsOfType("SENSOR").map(({ id, attributes }) => new Sensor(id, attributes))
+
+export const getLocations = () =>
+  [...locations.entries()].map(([id, name]) => ({ id, name }))
 
 /**
  * The sensor used for moisture gating. `sensorId` comes from settings; when it is
@@ -97,7 +137,9 @@ export const getSensor = (sensorId?: string | null): Sensor | null => {
 }
 
 export const getDevices = (): Device[] =>
-  recordsOfType("COMMON").map(({ id, attributes }) => new Device(id, attributes))
+  recordsOfType("COMMON").map(
+    ({ id, locationId, attributes }) => new Device(id, attributes, locationId)
+  )
 
 export const getConnectionState = () => ({
   connected: connectedAt != null,
@@ -110,6 +152,7 @@ export const getConnectionState = () => ({
 /** Test seam — lets unit tests populate the store without a socket. */
 export const resetStore = () => {
   services.clear()
+  locations.clear()
   connectedAt = null
   lastMessageAt = null
   lastError = null

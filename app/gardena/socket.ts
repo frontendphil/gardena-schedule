@@ -5,6 +5,7 @@ import {
   markConnected,
   markDisconnected,
   resetStore,
+  setLocationName,
   subscribe,
 } from "./store"
 
@@ -20,43 +21,64 @@ const SILENCE_TIMEOUT_MS = 10 * 60 * 1000
 const RECONNECT_BASE_MS = 10 * 1000
 const RECONNECT_MAX_MS = 15 * 60 * 1000
 
-let socket: WebSocket | null = null
-let cachedLocationId: string | null = null
-let failures = 0
+/** How long the first connection may take before the app serves anyway. */
+const FIRST_CONNECT_TIMEOUT_MS = 10_000
+
+/**
+ * A Gardena WebSocket is scoped to one location, so an account covering several
+ * properties needs one connection each. Each carries its own timers and backoff
+ * so a flaky gateway at one location cannot stall the others.
+ */
+type Connection = {
+  locationId: string
+  socket: WebSocket | null
+  failures: number
+  reconnectTimer: NodeJS.Timeout | null
+  recycleTimer: NodeJS.Timeout | null
+  silenceTimer: NodeJS.Timeout | null
+}
+
+const connections = new Map<string, Connection>()
+let cachedLocationIds: string[] | null = null
 let stopped = false
 
-// Tracked individually rather than in a list: the silence timer is replaced on
-// every message, and pushing each replacement onto an array would grow without
-// bound over a two-hour connection.
-let reconnectTimer: NodeJS.Timeout | null = null
-let recycleTimer: NodeJS.Timeout | null = null
-let silenceTimer: NodeJS.Timeout | null = null
-
-const clearTimers = () => {
-  for (const timer of [reconnectTimer, recycleTimer, silenceTimer]) {
+const clearTimers = (connection: Connection) => {
+  for (const timer of [
+    connection.reconnectTimer,
+    connection.recycleTimer,
+    connection.silenceTimer,
+  ]) {
     if (timer != null) clearTimeout(timer)
   }
 
-  reconnectTimer = null
-  recycleTimer = null
-  silenceTimer = null
+  connection.reconnectTimer = null
+  connection.recycleTimer = null
+  connection.silenceTimer = null
 }
 
-const resolveLocationId = async () => {
-  if (cachedLocationId != null) return cachedLocationId
+const resolveLocationIds = async () => {
+  if (cachedLocationIds != null) return cachedLocationIds
 
   const locations = (await getLocations()) as {
-    data?: Array<{ id: string }>
+    data?: Array<{ id: string; attributes?: { name?: string } }>
   }
 
-  const id = locations?.data?.[0]?.id
+  for (const location of locations?.data ?? []) {
+    const name = location.attributes?.name
 
-  if (id == null) {
+    if (typeof name === "string" && name !== "") {
+      setLocationName(location.id, name, { authoritative: true })
+    }
+  }
+
+  const ids = (locations?.data ?? []).map((location) => location.id)
+
+  if (ids.length === 0) {
     throw new Error("Gardena account has no locations")
   }
 
-  cachedLocationId = id
-  return id
+  cachedLocationIds = ids
+  return ids
 }
 
 /**
@@ -65,48 +87,51 @@ const resolveLocationId = async () => {
  */
 const seedFromRest = async (locationId: string) => {
   const location = (await getLocation(locationId)) as {
+    data?: unknown
     included?: unknown[]
   }
 
-  for (const item of location?.included ?? []) applyMessage(item)
+  // The `data` member is the LOCATION itself, which is where its name lives.
+  if (location?.data != null) applyMessage(location.data, locationId)
+
+  for (const item of location?.included ?? []) applyMessage(item, locationId)
 }
 
-const scheduleReconnect = () => {
+const scheduleReconnect = (connection: Connection) => {
   if (stopped) return
 
   const delay = Math.min(
-    RECONNECT_BASE_MS * 2 ** failures,
+    RECONNECT_BASE_MS * 2 ** connection.failures,
     RECONNECT_MAX_MS
   )
 
-  failures += 1
-  reconnectTimer = setTimeout(() => void connect(), delay)
+  connection.failures += 1
+  connection.reconnectTimer = setTimeout(() => void connect(connection), delay)
 }
 
-const connect = async (): Promise<void> => {
+const connect = async (connection: Connection): Promise<void> => {
   if (stopped) return
 
-  clearTimers()
+  clearTimers(connection)
 
   try {
-    const locationId = await resolveLocationId()
-    const url = await createWebsocketUrl(locationId)
+    const url = await createWebsocketUrl(connection.locationId)
     const ws = new WebSocket(url)
 
-    socket = ws
+    connection.socket = ws
 
     const resetSilenceTimer = () => {
-      if (silenceTimer != null) clearTimeout(silenceTimer)
-      silenceTimer = setTimeout(() => ws.close(), SILENCE_TIMEOUT_MS)
+      if (connection.silenceTimer != null) clearTimeout(connection.silenceTimer)
+      connection.silenceTimer = setTimeout(() => ws.close(), SILENCE_TIMEOUT_MS)
     }
 
     ws.onopen = () => {
-      failures = 0
+      connection.failures = 0
       markConnected()
       resetSilenceTimer()
 
       // Recycle before Gardena drops us, so there is no window without state.
-      recycleTimer = setTimeout(() => ws.close(), RECONNECT_AFTER_MS)
+      connection.recycleTimer = setTimeout(() => ws.close(), RECONNECT_AFTER_MS)
     }
 
     ws.onmessage = (event) => {
@@ -118,7 +143,7 @@ const connect = async (): Promise<void> => {
       if (text === "") return
 
       try {
-        applyMessage(JSON.parse(text))
+        applyMessage(JSON.parse(text), connection.locationId)
       } catch {
         // A single malformed frame must not tear down the connection.
       }
@@ -129,45 +154,59 @@ const connect = async (): Promise<void> => {
     }
 
     ws.onclose = () => {
-      if (socket === ws) socket = null
+      if (connection.socket === ws) connection.socket = null
       markDisconnected(null)
-      scheduleReconnect()
+      scheduleReconnect(connection)
     }
   } catch (error) {
     markDisconnected(error instanceof Error ? error.message : String(error))
-    scheduleReconnect()
+    scheduleReconnect(connection)
   }
 }
 
 /**
- * Pulls the full location over REST and folds it into the store.
+ * Pulls every location over REST and folds it into the store.
  *
  * The WebSocket already pushes every change, so this exists for the case where
- * the socket has silently stopped delivering. It costs one API request against
- * the monthly budget, which is why it is user-initiated rather than polled.
+ * the socket has silently stopped delivering. It costs one API request per
+ * location, which is why it is user-initiated rather than polled.
  */
 export const resyncFromRest = async () => {
-  await seedFromRest(await resolveLocationId())
+  for (const locationId of await resolveLocationIds()) {
+    await seedFromRest(locationId)
+  }
 }
 
-/** How long the first connection may take before the app serves anyway. */
-const FIRST_CONNECT_TIMEOUT_MS = 10_000
-
 /**
- * Starts the single WebSocket that backs the whole app. Costs one REST call per
- * reconnect (~12/day) instead of two per page view.
- *
- * Resolves once the socket is actually open, so the first request after a
- * restart renders live state rather than an empty page. A Gardena outage must
- * not block the app forever, so the wait is capped — reconnection continues in
- * the background either way.
+ * Starts one WebSocket per location. Costs one REST call per location per
+ * reconnect (~12/day each) instead of two per page view.
  */
 export const startSocket = async () => {
   stopped = false
 
-  await seedFromRest(await resolveLocationId())
-  await connect()
+  const locationIds = await resolveLocationIds()
 
+  for (const locationId of locationIds) {
+    await seedFromRest(locationId)
+  }
+
+  for (const locationId of locationIds) {
+    const connection: Connection = {
+      locationId,
+      socket: null,
+      failures: 0,
+      reconnectTimer: null,
+      recycleTimer: null,
+      silenceTimer: null,
+    }
+
+    connections.set(locationId, connection)
+    await connect(connection)
+  }
+
+  // Resolve once anything is live rather than waiting for every location, so one
+  // unreachable gateway cannot hold up the whole app. Reconnection continues in
+  // the background either way.
   await new Promise<void>((resolve) => {
     if (getConnectionState().connected) return resolve()
 
@@ -186,8 +225,14 @@ export const startSocket = async () => {
 
 export const stopSocket = () => {
   stopped = true
-  clearTimers()
-  socket?.close()
-  socket = null
+
+  for (const connection of connections.values()) {
+    clearTimers(connection)
+    connection.socket?.close()
+    connection.socket = null
+  }
+
+  connections.clear()
+  cachedLocationIds = null
   resetStore()
 }

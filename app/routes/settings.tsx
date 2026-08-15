@@ -13,9 +13,13 @@ import {
   useIsPending,
 } from "../components/ui"
 import { db } from "../db"
-import { settings as settingsTable, valves as valvesTable } from "../db/schema"
+import {
+  locations as locationsTable,
+  settings as settingsTable,
+  valves as valvesTable,
+} from "../db/schema"
 import { getRequestStats } from "../gardena/client"
-import { getConnectionState, getSensors } from "../gardena/store"
+import { getConnectionState, getDevices, getSensors } from "../gardena/store"
 import { displayName } from "../scheduler/plan"
 import type { Route } from "./+types/settings"
 
@@ -24,8 +28,31 @@ const START_TIME = new Date()
 
 export const loader = async () => {
   const settings = db.select().from(settingsTable).get()!
-  const sensors = getSensors()
   const connection = getConnectionState()
+
+  // A sensor service shares its id with the device that carries the name, so
+  // the picker can show "Sensor hinten" instead of a UUID fragment.
+  const deviceNames = new Map(
+    getDevices().map((device) => [device.id, device.name])
+  )
+  const locationNames = new Map(
+    db.select().from(locationsTable).all().map((row) => [row.id, row.name])
+  )
+  const showLocation = locationNames.size > 1
+
+  const sensors = getSensors().map((sensor) => {
+    const device = getDevices().find((entry) => entry.id === sensor.id)
+
+    return {
+      id: sensor.id,
+      name: deviceNames.get(sensor.id) ?? `Sensor ${sensor.id.slice(0, 8)}`,
+      soilHumidity: sensor.soilHumidity,
+      location:
+        showLocation && device != null
+          ? (locationNames.get(device.locationId) ?? null)
+          : null,
+    }
+  })
 
   const overrides = db
     .select()
@@ -40,10 +67,7 @@ export const loader = async () => {
   return {
     settings,
     overrides,
-    sensors: sensors.map((sensor) => ({
-      id: sensor.id,
-      soilHumidity: sensor.soilHumidity,
-    })),
+    sensors,
     connection: {
       connected: connection.connected,
       connectedAt: connection.connectedAt,
@@ -147,7 +171,8 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
                 <option value="">First available</option>
                 {sensors.map((sensor) => (
                   <option key={sensor.id} value={sensor.id}>
-                    {sensor.id.slice(0, 8)} ·{" "}
+                    {sensor.name}
+                    {sensor.location == null ? "" : ` (${sensor.location})`} ·{" "}
                     {sensor.soilHumidity == null
                       ? "no reading"
                       : `${sensor.soilHumidity}%`}

@@ -37,6 +37,7 @@ const schedule = (overrides: Partial<Schedule> = {}): Schedule => ({
 
 const valve = (id: string, overrides: Partial<ValveRow> = {}): ValveRow => ({
   id,
+  locationId: "loc-1",
   apiName: `API ${id}`,
   displayName: null,
   hidden: false,

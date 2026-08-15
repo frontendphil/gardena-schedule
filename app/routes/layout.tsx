@@ -84,7 +84,9 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
       <style>{`@keyframes tl-progress{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}`}</style>
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold tracking-tight">Garden</h1>
+          <h1 className="text-lg font-semibold tracking-tight">
+            Gardena Scheduler
+          </h1>
           {connected ? (
             <Badge tone="good">Connected</Badge>
           ) : (

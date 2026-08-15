@@ -10,7 +10,7 @@ import {
 import type { Route } from "./+types/root"
 import "./app.css"
 
-export const meta: Route.MetaFunction = () => [{ title: "Garden" }]
+export const meta: Route.MetaFunction = () => [{ title: "Gardena Scheduler" }]
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (

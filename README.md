@@ -1,4 +1,4 @@
-# Garden
+# Gardena Scheduler
 
 A scheduling app for a GARDENA smart irrigation system, built on the official
 Gardena Smart System API and backed by a local SQLite database.
@@ -35,8 +35,8 @@ Instead, a single long-lived process holds a WebSocket to Gardena and keeps an
 in-memory mirror of the location. **Route loaders never call the Gardena API** —
 they read the in-memory cache and SQLite. Browsing the app costs nothing.
 
-Measured budget: ~360 requests/month for WebSocket reconnects, ~30 for token
-refreshes, one request per valve per run, and one per press of the dashboard's
+Measured budget: ~360 requests/month per location for socket reconnects, ~30 for
+token refreshes, one request per valve per run, and one per press of the dashboard's
 *Refresh* button. That button re-reads what Gardena already holds (useful if the
 socket has gone quiet); it cannot make the sensor take a new measurement, because
 the API has no command for that — `SENSOR_CONTROL` is rejected outright. Settings → *Gardena connection*
@@ -56,6 +56,7 @@ shows the live request count for the running process.
 | **Moisture gating** | With the soil sensor enabled, a sprinkler is skipped when the reading is at or above its target. Re-checked before every sprinkler, so a long run reacts to the soil as it goes. |
 | **Per-sprinkler targets** | Any sprinkler can override the global moisture target — global 20%, but 30% for the hedge. |
 | **Run history** | Every run records what watered, what was skipped and why. |
+| **Several locations** | Every location on the account is connected, with one WebSocket each. Sprinklers are labelled by location when there is more than one, so two "Terrace" valves stay tellable apart. |
 | **Sensor health** | The dashboard shows soil moisture, soil temperature, sensor battery and how old the reading is, and warns below 30% battery — a flat sensor stops reporting and moisture gating would then water on a stale reading. |
 
 ### Recurrence
@@ -98,42 +99,50 @@ small always-on machine suits it far better than a serverless host.
 
 ### As a Home Assistant add-on (recommended)
 
-Home Assistant OS runs add-ons as Docker containers, gives each one a persistent
-`/data`, restarts them on boot and supervises them. That is exactly what this app
-needs, and it costs nothing extra to run.
+This repository *is* a Home Assistant add-on repository:
 
-1. Enable **Advanced Mode** on your Home Assistant user profile.
-2. Copy this repository to `/addons/garden` on the Home Assistant host — via the
-   *Samba share*, *Studio Code Server* or *Terminal & SSH* add-on.
-3. **Settings → Add-ons → Add-on Store → ⋮ → Check for updates**, then open
-   *Local add-ons* and install **Garden**. The first build takes a few minutes.
-4. On the **Configuration** tab fill in your Gardena key and secret, then start
-   the add-on and open the web UI.
+```
+repository.yaml            # repository manifest
+gardena-scheduler/         # the add-on
+  config.yaml              # manifest; points at a prebuilt image
+  DOCS.md                  # rendered as the add-on's Documentation tab
+```
 
-The database lives in the add-on's `/data`, so schedules survive restarts,
-updates and Home Assistant reboots.
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, and add
+   `https://github.com/frontendphil/gardena-schedule`.
+2. Install **Gardena Scheduler** from the store.
+3. Fill in your Gardena key and secret on the **Configuration** tab, start it,
+   and open the web UI.
 
-Notes:
+Installing pulls a prebuilt image from GHCR rather than building on the device,
+so it is a download instead of a multi-minute build on a Raspberry-Pi-class box —
+and it sidesteps the HAOS 17 containerd cache bug where a rebuild silently ships
+stale code. Updates appear as a normal **Update** button once a new version is
+published.
 
-- `config.yaml` is the add-on manifest. `arch` covers `aarch64` (Home Assistant
-  Green, Raspberry Pi) and `amd64`.
-- Configuration is read from the add-on options; `scripts/start.mjs` maps them to
-  the environment variables the app expects, so the same image also runs under
-  plain Docker.
-- This add-on is **not** exposed through Home Assistant Ingress. Ingress serves an
-  add-on under a path containing a per-session token, which a server-rendered
-  router cannot use as a static basename. It runs on port 3000 instead, with no
-  authentication of its own — see the note under *Setup*. To reach it from the
-  Home Assistant sidebar, add a `panel_iframe` entry pointing at
-  `http://<home-assistant>:3000`.
-- Set the timezone on the app's own Settings page. The container timezone does
-  not matter — schedule times are resolved against `settings.timezone`.
+> **Migrating from the old local add-on.** Earlier versions were installed by
+> copying this repo to `/addons/garden`. A repository add-on gets a different
+> slug, and therefore a different `/data`, so **schedules do not carry over**.
+> Either recreate them, or copy `gardena.db` out of the old add-on's data
+> directory into the new one before starting it. Uninstall the local copy
+> afterwards so two schedulers are not both watering.
+
+### Publishing a new version
+
+`garden`-side and code-side versions must agree, so the release workflow reads
+the version out of the manifest rather than the git tag:
+
+1. Bump `version:` in `gardena-scheduler/config.yaml`.
+2. Commit, tag (`git tag v1.5.0`), and push the tag.
+3. `.github/workflows/release.yml` builds `aarch64` + `amd64` images and pushes
+   them to GHCR under that version.
+4. Home Assistant offers the update.
 
 ### As a plain Docker container
 
 ```bash
-docker build -t garden .
-docker run -p 3000:3000 --env-file .env -v garden-data:/data garden
+docker build -t gardena-scheduler .
+docker run -p 3000:3000 --env-file .env -v gardena-data:/data gardena-scheduler
 ```
 
 Migrations run automatically on boot. **The `/data` volume must be persistent** —
@@ -156,7 +165,11 @@ app/
   routes/      dashboard, schedules, sprinklers, settings
 ```
 
-`app/gardena/runtime.ts` boots the socket, valve sync and the scheduler tick on
+One WebSocket is opened per Gardena location, each with its own backoff, so a
+flaky gateway at one property cannot stall the others. Services are tagged with
+the location they arrived from, which is what lets sprinklers be labelled.
+
+`app/gardena/runtime.ts` boots the sockets, valve sync and the scheduler tick on
 the first request and is a no-op afterwards. It is invoked from route middleware
 on the app layout (`v8_middleware`), not from a loader: sibling loaders run in
 parallel, so only middleware can guarantee the runtime is up — and the database

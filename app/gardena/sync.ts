@@ -1,8 +1,8 @@
 import { eq, isNull, or } from "drizzle-orm"
 
 import { db } from "../db"
-import { settings, valves } from "../db/schema"
-import { getSensor, getValves } from "./store"
+import { locations, settings, valves } from "../db/schema"
+import { getLocations, getSensor, getValves } from "./store"
 
 /**
  * Gardena names an unused valve port `Valve 1` … `Valve 6` and reports it as
@@ -41,13 +41,18 @@ export const syncValves = () => {
     for (const valve of reported) {
       if (existing.has(valve.id)) {
         tx.update(valves)
-          .set({ apiName: valve.name, lastSeenAt: now })
+          .set({
+            apiName: valve.name,
+            locationId: valve.locationId || null,
+            lastSeenAt: now,
+          })
           .where(eq(valves.id, valve.id))
           .run()
       } else {
         tx.insert(valves)
           .values({
             id: valve.id,
+            locationId: valve.locationId || null,
             apiName: valve.name,
             hidden: looksUnused(valve.name),
             lastSeenAt: now,
@@ -73,7 +78,27 @@ export const syncSensorSelection = () => {
     .run()
 }
 
+/** Mirrors location names so the UI can label sprinklers without the API. */
+export const syncLocations = () => {
+  const reported = getLocations()
+
+  if (reported.length === 0) return
+
+  db.transaction((tx) => {
+    for (const location of reported) {
+      tx.insert(locations)
+        .values(location)
+        .onConflictDoUpdate({
+          target: locations.id,
+          set: { name: location.name },
+        })
+        .run()
+    }
+  })
+}
+
 export const syncFromStore = () => {
+  syncLocations()
   syncValves()
   syncSensorSelection()
 }
