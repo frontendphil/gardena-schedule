@@ -31,6 +31,7 @@ COPY --from=build-env /app/build ./build
 # Migrations are applied at boot, so they have to ship with the image.
 COPY drizzle ./drizzle
 COPY scripts ./scripts
+COPY server.mjs ./server.mjs
 
 # Surfaced on the Settings page so a rebuild that silently did nothing is
 # visible rather than something you have to infer from behaviour.

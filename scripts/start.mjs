@@ -52,11 +52,7 @@ if (missing.length > 0) {
   process.exit(1)
 }
 
-const server = spawn(
-  "node_modules/.bin/react-router-serve",
-  ["./build/server/index.js"],
-  { stdio: "inherit", env }
-)
+const server = spawn("node", ["./server.mjs"], { stdio: "inherit", env })
 
 // Supervisor stops add-ons with SIGTERM; pass it on so the process exits
 // promptly instead of being killed after the grace period. The app closes its

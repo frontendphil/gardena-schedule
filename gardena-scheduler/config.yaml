@@ -5,7 +5,7 @@
 # building on the device, so installing on a Raspberry-Pi-class box is a download
 # instead of a multi-minute build.
 name: Gardena Scheduler
-version: "1.5.0"
+version: "1.6.0"
 slug: gardena_scheduler
 description: Scheduling for a GARDENA smart irrigation system
 url: https://github.com/frontendphil/gardena-schedule
@@ -25,11 +25,21 @@ init: false
 startup: application
 boot: auto
 
+# Served through Home Assistant Ingress: the panel appears in the sidebar and
+# Home Assistant does the authenticating, so the add-on needs no login of its
+# own and no port has to be opened on the network.
+ingress: true
+ingress_port: 3000
+panel_icon: mdi:sprinkler-variant
+panel_title: Watering
+
+# Declared but unmapped: direct LAN access is opt-in from the add-on's
+# Network settings. Anything reaching this port bypasses Home Assistant's
+# authentication entirely.
 ports:
-  3000/tcp: 3000
+  3000/tcp: null
 ports_description:
-  3000/tcp: Web interface
-webui: "http://[HOST]:[PORT:3000]"
+  3000/tcp: Direct access, bypassing Home Assistant login. Leave unset unless you need it.
 
 # The scheduler has to survive a Home Assistant restart without a browser open.
 watchdog: "tcp://[HOST]:[PORT:3000]"

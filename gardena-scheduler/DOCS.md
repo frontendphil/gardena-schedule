@@ -30,7 +30,7 @@ stop.
    create an application, then **connect the "GARDENA smart system API"** to it.
    Copy the application key and secret.
 2. Fill both into the **Configuration** tab.
-3. Start the add-on and open the web UI.
+3. Start the add-on. It appears in the sidebar as **Watering**.
 4. On **Settings**, set your timezone. Schedule times are local to it.
 
 | Option | |
@@ -38,19 +38,16 @@ stop.
 | `gardena_application_key` | Application key from the developer portal. |
 | `gardena_application_secret` | Application secret. Stored by Supervisor, never shown again. |
 
-## No authentication
+## Access and authentication
 
-The add-on serves its UI on port 3000 with **no login**. Anyone who can reach
-that port on your network can water your garden. That is a deliberate tradeoff
-for a LAN tool — but do not forward the port or otherwise expose it to the
-internet without an authenticating proxy in front of it.
+The add-on runs behind **Home Assistant Ingress**, so it appears in the sidebar
+as *Watering* and Home Assistant does the authenticating. There is no separate
+login and no port is opened on your network.
 
-It is not behind Home Assistant Ingress: Ingress serves an add-on under a path
-containing a per-session token, which a server-rendered router cannot use as a
-static base path.
-
-To reach it from the sidebar, add a `panel_iframe` entry pointing at
-`http://<home-assistant>:3000`.
+No port is published by default. If you want to reach the UI directly — from a
+tablet on the wall, say — set a host port under the add-on's **Network**
+settings. Be deliberate about it: **anything reaching that port bypasses Home
+Assistant's login entirely**, and can water your garden.
 
 ## Using it
 

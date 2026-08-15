@@ -78,10 +78,9 @@ pnpm dev
 | `GARDENA_APPLICATION_KEY` / `GARDENA_APPLICATION_SECRET` | From the [Husqvarna developer portal](https://developer.husqvarnagroup.cloud/). The app needs the Gardena Smart System API connected to it. |
 | `DATABASE_PATH` | SQLite file location. Defaults to `./data/gardena.db`. |
 
-There is **no authentication** — the app assumes it is reachable only from your
-home network. Anyone who can open the page can water the garden, so do not
-forward the port or otherwise expose it to the internet without putting an
-authenticating proxy in front of it.
+Run directly, the app has **no authentication** and assumes a trusted network.
+As a Home Assistant add-on it runs behind Ingress instead, so Home Assistant
+authenticates every request and no port is exposed.
 
 ## Development
 
@@ -158,12 +157,36 @@ cloud host, use an always-on container platform (Fly.io with
 ## How it fits together
 
 ```
+server.mjs                 production server; also does the Ingress path handling
 app/
   db/          schema + migrations; the source of truth for everything you author
   gardena/     auth, REST client, WebSocket, in-memory device cache, valve sync
   scheduler/   plan.ts is pure and unit-tested; runner.ts executes runs
   routes/      dashboard, schedules, sprinklers, settings
+gardena-scheduler/         Home Assistant add-on (manifest + docs)
 ```
+
+### Home Assistant Ingress
+
+Ingress publishes the add-on at `/api/hassio_ingress/<token>/…` with a token that
+changes per session, and Supervisor strips that prefix before forwarding — so the
+app sees clean paths and learns the public prefix only from the `X-Ingress-Path`
+header. React Router's `basename` is build-time config, which a per-session token
+cannot satisfy.
+
+`server.mjs` resolves this per request:
+
+- builds one request handler per prefix, overriding the `ServerBuild`'s
+  `basename` and `publicPath`, and rewriting the asset manifest (asset URLs are
+  baked in at build time, so `publicPath` alone does not move them);
+- puts the prefix *back* onto `req.originalUrl` — React Router strips `basename`
+  before matching, and the Express adapter builds its Request from `originalUrl`,
+  not `url`;
+- prefixes `Location` headers, since a redirect returned from an action is a
+  plain Response that React Router does not rewrite.
+
+Nothing on the client changes: the server serialises `basename` into
+`window.__reactRouterContext`, and `HydratedRouter` reads it from there.
 
 One WebSocket is opened per Gardena location, each with its own backoff, so a
 flaky gateway at one property cannot stall the others. Services are tagged with
