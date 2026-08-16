@@ -174,10 +174,23 @@ export const buildPlan = (
 
   const ordered = [...steps]
     .sort((a, b) => a.position - b.position)
-    // A step whose valve vanished from the account is dropped rather than
-    // throwing — the schedule as a whole must stay runnable. Dropping happens
-    // before grouping so a removed leader does not orphan its followers.
-    .filter((step) => valvesById.has(step.valveId))
+    // Two kinds of step are dropped before grouping, so a removed leader cannot
+    // orphan its followers:
+    //
+    //  - the valve has vanished from the account, and
+    //  - the valve is switched off.
+    //
+    // The second matters more than it looks. Switching a sprinkler off only used
+    // to hide it from the pickers, so any schedule that already contained it
+    // kept opening it every run — and commanding a valve port with nothing wired
+    // to it makes the controller report a fault, which Gardena then pushes as a
+    // notification. A guarantee enforced only when something is *added* is not a
+    // guarantee; this is the point where it has to hold.
+    .filter((step) => {
+      const valve = valvesById.get(step.valveId)
+
+      return valve != null && !valve.hidden
+    })
 
   let offsetMinutes = 0
   const planned: PlannedStep[] = []

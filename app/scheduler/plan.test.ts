@@ -163,6 +163,46 @@ describe("buildPlan", () => {
     expect(plan.steps.map((s) => s.valve.id)).toEqual(["a:1", "a:2", "a:3"])
   })
 
+  it("never runs a switched-off valve, however it got into the schedule", () => {
+    const withDisabled = new Map(valves)
+    withDisabled.set("a:2", valve("a:2", { hidden: true }))
+
+    const plan = buildPlan(
+      schedule(),
+      [step(1, "a:1", 15, 0), step(2, "a:2", 20, 1), step(3, "a:3", 10, 2)],
+      withDisabled,
+      "2026-07-15",
+      TZ
+    )
+
+    // Commanding an unwired valve port makes the controller report a fault, so
+    // the step is dropped rather than merely hidden from the pickers.
+    expect(plan.steps.map((s) => s.valve.id)).toEqual(["a:1", "a:3"])
+    // …and the run gets shorter, rather than idling through the skipped slot.
+    expect(plan.totalMinutes).toBe(25)
+    expect(formatZonedTime(plan.steps[1].startsAt, TZ)).toBe("06:15")
+  })
+
+  it("does not orphan a parallel follower when its leader is switched off", () => {
+    const withDisabled = new Map(valves)
+    withDisabled.set("a:1", valve("a:1", { hidden: true }))
+
+    const plan = buildPlan(
+      schedule(),
+      [
+        step(1, "a:1", 15, 0),
+        { ...step(2, "a:2", 20, 1), startsWithPrevious: true },
+      ],
+      withDisabled,
+      "2026-07-15",
+      TZ
+    )
+
+    expect(plan.steps.map((s) => s.valve.id)).toEqual(["a:2"])
+    expect(plan.groups).toHaveLength(1)
+    expect(formatZonedTime(plan.steps[0].startsAt, TZ)).toBe("06:00")
+  })
+
   it("drops steps whose valve has disappeared instead of throwing", () => {
     const plan = buildPlan(
       schedule(),

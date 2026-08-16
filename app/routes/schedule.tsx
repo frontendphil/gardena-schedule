@@ -85,6 +85,9 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
       location: valvesById.has(step.valveId)
         ? locationOf(valvesById.get(step.valveId)!)
         : null,
+      // Switched-off sprinklers are never watered, but the step stays visible
+      // here so it can be found and removed rather than silently doing nothing.
+      disabled: valvesById.get(step.valveId)?.hidden ?? false,
     }))
 
   const used = new Set(steps.map((step) => step.valveId))
@@ -564,7 +567,11 @@ function ScheduleEditor({
 
     let offset = 0
 
-    return groupSteps(orderedSteps).flatMap((group, groupIndex) => {
+    // Mirrors `buildPlan`, which drops switched-off sprinklers — otherwise the
+    // times shown here would not be the times that actually run.
+    const running = orderedSteps.filter((step) => !step.disabled)
+
+    return groupSteps(running).flatMap((group, groupIndex) => {
       const startsAt = addMinutes(startTime, offset)
       const groupMinutes = Math.max(...group.map(minutesOf))
 
@@ -582,6 +589,8 @@ function ScheduleEditor({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderedSteps.map((step) => step.id).join(","), steps, durations, startTime])
+
+  const disabledSteps = orderedSteps.filter((step) => step.disabled)
 
   // Only one member of each parallel group contributes to the elapsed time.
   const totalMinutes = [
@@ -879,6 +888,40 @@ function ScheduleEditor({
               )
             })}
           </ol>
+        )}
+
+        {disabledSteps.length > 0 && (
+          <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            <p className="font-medium">
+              Switched off, so never watered
+            </p>
+            <p className="mt-1">
+              These sprinklers are off on the Sprinklers page. They are skipped
+              entirely — no command is sent to the valve — and the times above
+              already exclude them.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {disabledSteps.map((step) => (
+                <li
+                  key={step.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300/60 bg-white/40 px-3 py-2 dark:border-amber-900/60 dark:bg-black/20"
+                >
+                  <span className="font-medium">{step.name}</span>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="remove-step" />
+                    <input type="hidden" name="stepId" value={step.id} />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      aria-label={`Remove ${step.name}`}
+                    >
+                      Remove
+                    </Button>
+                  </Form>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {available.length > 0 && (
