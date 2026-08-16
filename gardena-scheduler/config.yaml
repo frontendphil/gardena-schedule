@@ -5,7 +5,7 @@
 # building on the device, so installing on a Raspberry-Pi-class box is a download
 # instead of a multi-minute build.
 name: Gardena Scheduler
-version: "1.6.4"
+version: "1.7.0"
 slug: gardena_scheduler
 description: Scheduling for a GARDENA smart irrigation system
 url: https://github.com/frontendphil/gardena-schedule
@@ -47,6 +47,13 @@ watchdog: "tcp://[HOST]:[PORT:3000]"
 options:
   gardena_application_key: ""
   gardena_application_secret: ""
+  gardena_email: ""
+  gardena_password: ""
 schema:
   gardena_application_key: str
   gardena_application_secret: password
+  # Optional. Only used to force a soil measurement before a moisture-gated run,
+  # which the public API cannot do. Leave empty and the add-on works exactly as
+  # before, treating an out-of-date reading as unknown and watering.
+  gardena_email: "str?"
+  gardena_password: "password?"

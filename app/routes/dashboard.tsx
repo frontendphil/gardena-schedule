@@ -1,4 +1,4 @@
-import { Form, Link, href, useLocation } from "react-router"
+import { Form, Link, href, useLocation, useSearchParams } from "react-router"
 
 import {
   Badge,
@@ -16,6 +16,7 @@ import {
   valves as valvesTable,
   type RunStepStatus,
 } from "../db/schema"
+import { hasAccountCredentials } from "../gardena/account"
 import { getDevices, getSensor, getValves } from "../gardena/store"
 import {
   buildPlan,
@@ -107,6 +108,7 @@ export const loader = async () => {
     batteryLevel: sensorDevice?.batteryLevel ?? null,
     batteryMeasuredAt: sensorDevice?.batteryMeasuredAt ?? null,
     signalLevel: sensorDevice?.rfLinkLevel ?? null,
+    canForceMeasurement: hasAccountCredentials(),
     gated,
     watering: [...apiValves.values()]
       .filter((valve) => valve.watering)
@@ -144,6 +146,19 @@ const STEP_LABELS: Record<RunStepStatus, { label: string; tone: "neutral" | "act
   failed: { label: "Failed", tone: "bad" },
 }
 
+/** Result of pressing "Measure now", reported rather than failing silently. */
+const MEASURE_OUTCOMES: Record<string, string> = {
+  refreshed: "The sensor took a new reading.",
+  "timed-out":
+    "Gardena accepted the request but no new reading arrived within 30 seconds.",
+  failed:
+    "Could not reach Gardena's app API — check the account email and password on Settings.",
+  "not-configured":
+    "No Husqvarna account is configured, so the sensor cannot be asked to measure.",
+  "no-sensor": "No soil sensor is reporting.",
+  "fresh-enough": "The reading was already current.",
+}
+
 /** "just now" / "12 min ago" / "3 h ago" — how stale the reading is. */
 const formatAge = (measuredAt: Date | string | null, now: number) => {
   if (measuredAt == null) return null
@@ -173,6 +188,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
     batteryLevel,
     batteryMeasuredAt,
     signalLevel,
+    canForceMeasurement,
     gated,
     watering,
     upcoming,
@@ -181,6 +197,9 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 
   const location = useLocation()
   const refreshing = useIsPending("refresh")
+  const measuring = useIsPending("measure")
+  const [searchParams] = useSearchParams()
+  const measured = searchParams.get("measured")
 
   const dateFormat = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
@@ -215,7 +234,22 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
               : `Measured ${formatAge(measuredAt, now)} · ${dateFormat.format(new Date(measuredAt))}`
           }
           actions={
-            <Form method="post" action={href("/refresh")}>
+            <div className="flex items-center gap-1">
+              {canForceMeasurement && (
+                <Form method="post" action={href("/measure")}>
+                  <input type="hidden" name="intent" value="measure" />
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    busy={measuring}
+                    className="whitespace-nowrap"
+                    title="Ask the sensor to take a reading now, via Gardena's app API."
+                  >
+                    Measure
+                  </Button>
+                </Form>
+              )}
+              <Form method="post" action={href("/refresh")}>
               {/* Named so `useIsPending` can light up this button alone. */}
               <input type="hidden" name="intent" value="refresh" />
               <input type="hidden" name="returnTo" value={location.pathname} />
@@ -223,13 +257,28 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                 type="submit"
                 variant="ghost"
                 busy={refreshing}
-                title="Re-read from Gardena. The sensor decides when it measures — this cannot force a new reading."
+                className="whitespace-nowrap"
+                title="Re-read what Gardena already holds. Does not ask the sensor to measure."
               >
                 Refresh
               </Button>
-            </Form>
+              </Form>
+            </div>
           }
         >
+          {measured != null && (
+            <p
+              className={cx(
+                "mb-3 rounded-lg px-3 py-2 text-sm",
+                measured === "refreshed"
+                  ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
+                  : "bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+              )}
+            >
+              {MEASURE_OUTCOMES[measured] ?? `Measurement: ${measured}`}
+            </p>
+          )}
+
           {soilHumidity == null ? (
             <p className="text-sm text-stone-500 dark:text-stone-400">
               No sensor reading yet.

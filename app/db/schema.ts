@@ -18,6 +18,14 @@ export const settings = sqliteTable("settings", {
   globalMoistureTarget: integer("global_moisture_target").notNull().default(30),
   /** Gardena SENSOR service id used for gating. Null until one is discovered. */
   sensorId: text("sensor_id"),
+  /**
+   * How old a reading may be and still be trusted by the moisture gate.
+   *
+   * A sensor that stops reporting — flat battery, out of range — otherwise
+   * freezes the gate on its last value. If that value said "wet", watering is
+   * skipped indefinitely while every run still looks healthy.
+   */
+  maxReadingAgeMinutes: integer("max_reading_age_minutes").notNull().default(180),
   timezone: text("timezone").notNull().default("Europe/Berlin"),
 })
 

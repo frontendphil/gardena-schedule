@@ -4,6 +4,20 @@ Home Assistant shows this file on the add-on's page and when an update is
 available. Entries are added automatically from GitHub release notes — see
 "Publishing a new version" in the repository README.
 
+## 1.7.0
+
+- The moisture gate no longer trusts a reading forever. Past a configurable age
+  (3 hours by default) a reading counts as unknown and the sprinkler waters, so
+  a sensor that has stopped reporting cannot silently suppress watering while
+  the run history still looks healthy.
+- **Optional**: supply a Husqvarna account email and password and the add-on can
+  ask the sensor to measure before a moisture-gated run, plus a **Measure**
+  button on the dashboard. This uses Gardena's own app API — the public API has
+  no such command — so it is undocumented and may change; if it fails, the run
+  falls back to the rule above and waters. Leave the fields empty and nothing
+  changes.
+- Run history now records how old the reading was when the gate decided.
+
 ## 1.6.4 - 2026-08-16
 
 Make sure no hidden valves are part of any execution.

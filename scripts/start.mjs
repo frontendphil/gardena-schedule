@@ -16,6 +16,9 @@ const OPTIONS_PATH = "/data/options.json"
 const OPTION_ENV = {
   gardena_application_key: "GARDENA_APPLICATION_KEY",
   gardena_application_secret: "GARDENA_APPLICATION_SECRET",
+  // Optional; enables forcing a soil measurement. See app/gardena/account.ts.
+  gardena_email: "GARDENA_EMAIL",
+  gardena_password: "GARDENA_PASSWORD",
 }
 
 const env = { ...process.env }

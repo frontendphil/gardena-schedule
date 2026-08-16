@@ -91,8 +91,29 @@ The dashboard shows the reading's age and the sensor's battery, and warns below
 30%. A flat sensor stops reporting, and the gate would then decide on a stale
 number.
 
+### Trusting a reading, and forcing a new one
+
+A reading is only trusted for as long as you allow on the Settings page
+(3 hours by default). Past that it counts as *unknown*, and the sprinkler
+**waters**. That asymmetry is deliberate: watering an already-wet garden wastes
+one cycle, whereas trusting a sensor that has quietly stopped reporting skips
+watering indefinitely while every run still looks healthy in the history.
+
 The **Refresh** button re-reads what Gardena currently holds. It cannot make the
-sensor take a new measurement — the API has no command for that.
+sensor measure — the public API has no command for that.
+
+**Optionally**, you can supply your Husqvarna account email and password on the
+Configuration tab. With those set the add-on can ask the sensor to measure, so a
+stale reading is brought up to date before the gate decides, and a **Measure** button appears on the dashboard.
+
+Worth understanding before you enable it:
+
+- It uses Gardena's own app API rather than the public developer API, because
+  only the former has the command. That API is undocumented and may change
+  without notice; if it fails, the run falls back to the rule above and waters.
+- An account password is a much stronger credential than an application key.
+  Leave the fields empty and none of this is used — everything else works
+  exactly the same.
 
 ### Several locations
 

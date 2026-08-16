@@ -19,7 +19,9 @@ import {
   valves as valvesTable,
 } from "../db/schema"
 import { getRequestStats } from "../gardena/client"
-import { getConnectionState, getDevices, getSensors } from "../gardena/store"
+import { hasAccountCredentials } from "../gardena/account"
+import { readingAgeMinutes } from "../gardena/measure"
+import { getConnectionState, getDevices, getSensor, getSensors } from "../gardena/store"
 import { displayName } from "../scheduler/plan"
 import type { Route } from "./+types/settings"
 
@@ -75,6 +77,10 @@ export const loader = async () => {
       lastError: connection.lastError,
     },
     requests: getRequestStats(),
+    canForceMeasurement: hasAccountCredentials(),
+    currentReadingAge: readingAgeMinutes(
+      getSensor(settings.sensorId)?.measuredAt ?? null
+    ),
     version: process.env.APP_VERSION ?? "dev",
     startedAt: START_TIME,
   }
@@ -98,6 +104,11 @@ export const action = async ({ request }: Route.ActionArgs) => {
     return { error: `"${timezone}" is not a valid timezone.` }
   }
 
+  const maxReadingAge = Math.min(
+    10080,
+    Math.max(5, Math.round(Number(formData.get("maxReadingAgeMinutes") ?? 180)))
+  )
+
   const sensorId = String(formData.get("sensorId") ?? "").trim()
 
   db.update(settingsTable)
@@ -105,6 +116,7 @@ export const action = async ({ request }: Route.ActionArgs) => {
       sensorGateEnabled: formData.get("sensorGateEnabled") === "on",
       globalMoistureTarget: Number.isNaN(target) ? 30 : target,
       sensorId: sensorId === "" ? null : sensorId,
+      maxReadingAgeMinutes: Number.isNaN(maxReadingAge) ? 180 : maxReadingAge,
       timezone,
     })
     .where(eq(settingsTable.id, 1))
@@ -114,8 +126,17 @@ export const action = async ({ request }: Route.ActionArgs) => {
 }
 
 export default function Settings({ loaderData, actionData }: Route.ComponentProps) {
-  const { settings, sensors, overrides, connection, requests, version, startedAt } =
-    loaderData
+  const {
+    settings,
+    sensors,
+    overrides,
+    connection,
+    requests,
+    version,
+    startedAt,
+    canForceMeasurement,
+    currentReadingAge,
+  } = loaderData
   const saving = useIsPending("save-settings")
 
   // Explicit locale and zone: `toLocaleString()` resolves differently on the
@@ -196,6 +217,44 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
                 ))}
               </Select>
             </Field>
+          </div>
+
+          <Field
+            label="Trust a reading for"
+            hint={
+              canForceMeasurement
+                ? "Past this, the sensor is asked to measure again before the gate decides."
+                : "Past this, the reading is treated as unknown and the sprinkler waters."
+            }
+          >
+            <div className="mt-1 flex items-center gap-2">
+              <Input
+                type="number"
+                name="maxReadingAgeMinutes"
+                min={5}
+                max={10080}
+                defaultValue={settings.maxReadingAgeMinutes}
+                className="max-w-32"
+              />
+              <span className="text-sm text-stone-500 dark:text-stone-400">
+                minutes
+                {currentReadingAge != null &&
+                  ` · current reading is ${currentReadingAge} min old`}
+              </span>
+            </div>
+          </Field>
+
+          <div className="rounded-lg bg-stone-100 px-4 py-3 text-sm dark:bg-stone-800/50">
+            <p className="font-medium">
+              {canForceMeasurement
+                ? "Can force a measurement"
+                : "Cannot force a measurement"}
+            </p>
+            <p className="mt-1 text-stone-600 dark:text-stone-400">
+              {canForceMeasurement
+                ? "A Husqvarna account is configured, so a stale reading is refreshed before the gate decides. This uses Gardena's own app API, which is undocumented and may change; if it fails, the run falls back to watering."
+                : "Gardena's public API cannot ask the sensor to measure — only its own app can. Without a Husqvarna account configured, a reading older than the limit above counts as unknown and the sprinkler waters, so a sensor that stops reporting can never silently suppress watering."}
+            </p>
           </div>
 
           {overrides.length > 0 && (

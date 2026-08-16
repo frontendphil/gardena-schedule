@@ -115,7 +115,9 @@ export const getValves = (): Valve[] =>
     .sort((a, b) => a.id.localeCompare(b.id))
 
 export const getSensors = (): Sensor[] =>
-  recordsOfType("SENSOR").map(({ id, attributes }) => new Sensor(id, attributes))
+  recordsOfType("SENSOR").map(
+    ({ id, locationId, attributes }) => new Sensor(id, attributes, locationId)
+  )
 
 export const getLocations = () =>
   [...locations.entries()].map(([id, name]) => ({ id, name }))

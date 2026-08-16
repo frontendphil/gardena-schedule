@@ -29,6 +29,13 @@
       "when": 1786787635175,
       "tag": "0003_giant_warpath",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786903176465,
+      "tag": "0004_white_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }

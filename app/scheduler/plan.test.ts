@@ -5,6 +5,7 @@ import {
   buildPlan,
   byDisplayName,
   coversDate,
+  decideMoisture,
   displayName,
   getNextOccurrence,
   isDue,
@@ -384,22 +385,58 @@ describe("moisture gate", () => {
     ).toBe(30)
   })
 
+  const gate = (
+    moistureTarget: number | null,
+    reading: number | null,
+    overrides: Partial<Parameters<typeof decideMoisture>[0]> = {}
+  ) =>
+    decideMoisture({
+      valve: { moistureTarget },
+      globalTarget: 20,
+      sensorGateEnabled: true,
+      reading,
+      readingAgeMinutes: 5,
+      maxReadingAgeMinutes: 180,
+      ...overrides,
+    })
+
   it("skips only when the reading has reached the applicable target", () => {
-    const gate = (moistureTarget: number | null, reading: number | null) =>
-      shouldSkipForMoisture({
-        valve: { moistureTarget },
-        globalTarget: 20,
-        sensorGateEnabled: true,
-        reading,
-      })
 
     // Global target 20, reading 20 -> soil is wet enough, skip.
-    expect(gate(null, 20)).toBe(true)
-    expect(gate(null, 19)).toBe(false)
+    expect(gate(null, 20).skip).toBe(true)
+    expect(gate(null, 19).skip).toBe(false)
 
     // Raising this valve's target to 30 makes it water at a reading of 20.
-    expect(gate(30, 20)).toBe(false)
-    expect(gate(30, 30)).toBe(true)
+    expect(gate(30, 20).skip).toBe(false)
+    expect(gate(30, 30).skip).toBe(true)
+  })
+
+  it("waters when the reading is older than the allowed age", () => {
+    // Same wet reading that would normally skip…
+    expect(gate(null, 90, { readingAgeMinutes: 179 })).toEqual({
+      skip: true,
+      reason: "wet",
+    })
+
+    // …is not trusted once it is past the threshold. A sensor that has stopped
+    // reporting must not be able to suppress watering forever.
+    expect(gate(null, 90, { readingAgeMinutes: 181 })).toEqual({
+      skip: false,
+      reason: "stale-reading",
+    })
+  })
+
+  it("treats a reading with no timestamp as usable rather than stale", () => {
+    expect(gate(null, 90, { readingAgeMinutes: null })).toEqual({
+      skip: true,
+      reason: "wet",
+    })
+  })
+
+  it("reports why it let a sprinkler run", () => {
+    expect(gate(null, 90, { sensorGateEnabled: false }).reason).toBe("gate-off")
+    expect(gate(null, null).reason).toBe("no-reading")
+    expect(gate(null, 5).reason).toBe("dry")
   })
 
   it("waters when the gate is off or the sensor has no reading", () => {
@@ -409,6 +446,8 @@ describe("moisture gate", () => {
         globalTarget: 20,
         sensorGateEnabled: false,
         reading: 90,
+        readingAgeMinutes: 5,
+        maxReadingAgeMinutes: 180,
       })
     ).toBe(false)
 
@@ -418,6 +457,8 @@ describe("moisture gate", () => {
         globalTarget: 20,
         sensorGateEnabled: true,
         reading: null,
+        readingAgeMinutes: null,
+        maxReadingAgeMinutes: 180,
       })
     ).toBe(false)
   })

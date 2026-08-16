@@ -8,6 +8,7 @@ import {
 export default [
   route("master", "routes/master.ts"),
   route("refresh", "routes/refresh.ts"),
+  route("measure", "routes/measure.ts"),
   layout("routes/layout.tsx", [
     index("routes/dashboard.tsx"),
     route("schedules", "routes/schedules.tsx"),

@@ -12,8 +12,9 @@ import {
   type Schedule,
 } from "../db/schema"
 import { startValve, stopValve } from "../gardena/client"
+import { readingAgeMinutes, refreshSoilReading } from "../gardena/measure"
 import { getSensor, getValves } from "../gardena/store"
-import { buildPlan, displayName, isDue, shouldSkipForMoisture } from "./plan"
+import { buildPlan, decideMoisture, displayName, isDue } from "./plan"
 
 const TICK_MS = 30_000
 
@@ -179,8 +180,19 @@ const executeRun = async (
     }
 
     // A fresh reading per group, so a long run reacts to the soil as it goes.
+    // When account credentials are configured the sensor is asked to measure
+    // now if its last reading has aged out; otherwise the gate falls back to
+    // treating a stale reading as unknown, which waters.
+    if (current.sensorGateEnabled) {
+      await refreshSoilReading({
+        sensorId: current.sensorId,
+        maxAgeMinutes: current.maxReadingAgeMinutes,
+      })
+    }
+
     const sensor = getSensor(current.sensorId)
     const reading = sensor?.soilHumidity ?? null
+    const readingAge = readingAgeMinutes(sensor?.measuredAt ?? null)
 
     const started = (
       await Promise.all(
@@ -203,18 +215,22 @@ const executeRun = async (
 
           const target = valveRow.moistureTarget ?? current.globalMoistureTarget
 
-          if (
-            shouldSkipForMoisture({
-              valve: valveRow,
-              globalTarget: current.globalMoistureTarget,
-              sensorGateEnabled: current.sensorGateEnabled,
-              reading,
-            })
-          ) {
+          const decision = decideMoisture({
+            valve: valveRow,
+            globalTarget: current.globalMoistureTarget,
+            sensorGateEnabled: current.sensorGateEnabled,
+            reading,
+            readingAgeMinutes: readingAge,
+            maxReadingAgeMinutes: current.maxReadingAgeMinutes,
+          })
+
+          if (decision.skip) {
             db.update(runSteps)
               .set({
                 status: "skipped_moisture",
-                detail: `Soil at ${reading}%, target ${target}%`,
+                detail: `Soil at ${reading}%, target ${target}%${
+                  readingAge == null ? "" : ` (measured ${readingAge} min ago)`
+                }`,
                 moistureReading: reading,
                 moistureTarget: target,
                 finishedAt: new Date(),
@@ -231,6 +247,10 @@ const executeRun = async (
               startedAt: new Date(),
               moistureReading: reading,
               moistureTarget: target,
+              detail:
+                decision.reason === "stale-reading"
+                  ? `Watered anyway: sensor reading was ${readingAge} min old`
+                  : null,
             })
             .where(eq(runSteps.id, runStep.id))
             .run()

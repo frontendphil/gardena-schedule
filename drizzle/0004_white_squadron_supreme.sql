@@ -1,0 +1,1 @@
+ALTER TABLE `settings` ADD `max_reading_age_minutes` integer DEFAULT 180 NOT NULL;

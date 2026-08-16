@@ -77,19 +77,30 @@ export class Valve {
 
 export class Sensor {
   readonly id: string
+  readonly locationId: string
   readonly soilHumidity: number | null
   readonly soilTemperature: number | null
   readonly measuredAt: Date | null
 
-  constructor(id: string, attributes: unknown) {
+  constructor(id: string, attributes: unknown, locationId = "") {
     const parsed = sensorAttributes.parse(attributes)
 
     this.id = id
+    this.locationId = locationId
     this.soilHumidity = parsed.soilHumidity?.value ?? null
     this.soilTemperature = parsed.soilTemperature?.value ?? null
 
     const timestamp = parsed.soilHumidity?.timestamp
     this.measuredAt = timestamp ? new Date(timestamp) : null
+  }
+
+  /**
+   * The device the sensor service belongs to. Gardena gives a sensor's SENSOR
+   * and COMMON services the same id as the device itself, unlike a valve, whose
+   * service id is `<deviceId>:<port>`.
+   */
+  get deviceId() {
+    return this.id.split(":")[0]
   }
 }
 

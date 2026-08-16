@@ -251,24 +251,52 @@ export const resolveMoistureTarget = (
   globalTarget: number
 ) => valve.moistureTarget ?? globalTarget
 
-export const shouldSkipForMoisture = ({
+/** Why the gate let a sprinkler run, or held it back. Recorded per step. */
+export type MoistureDecision =
+  | { skip: true; reason: "wet" }
+  | { skip: false; reason: "gate-off" | "no-reading" | "stale-reading" | "dry" }
+
+/**
+ * The moisture gate.
+ *
+ * Every "don't water" answer requires positive evidence that the soil is wet.
+ * Absent or out-of-date evidence waters, because the two failure modes are not
+ * symmetric: watering a wet garden wastes a cycle, whereas trusting a reading
+ * from a sensor that has quietly stopped reporting skips watering indefinitely
+ * while every run still looks healthy in the history.
+ */
+export const decideMoisture = ({
   valve,
   globalTarget,
   sensorGateEnabled,
   reading,
+  readingAgeMinutes,
+  maxReadingAgeMinutes,
 }: {
   valve: Pick<ValveRow, "moistureTarget">
   globalTarget: number
   sensorGateEnabled: boolean
   reading: number | null
-}) => {
-  if (!sensorGateEnabled) return false
+  /** Null when the reading carries no timestamp. */
+  readingAgeMinutes: number | null
+  maxReadingAgeMinutes: number
+}): MoistureDecision => {
+  if (!sensorGateEnabled) return { skip: false, reason: "gate-off" }
+  if (reading == null) return { skip: false, reason: "no-reading" }
 
-  // No reading means no evidence the soil is wet; watering is the safe default.
-  if (reading == null) return false
+  if (readingAgeMinutes != null && readingAgeMinutes > maxReadingAgeMinutes) {
+    return { skip: false, reason: "stale-reading" }
+  }
 
   return reading >= resolveMoistureTarget(valve, globalTarget)
+    ? { skip: true, reason: "wet" }
+    : { skip: false, reason: "dry" }
 }
+
+/** Convenience wrapper for callers that only need the boolean. */
+export const shouldSkipForMoisture = (
+  input: Parameters<typeof decideMoisture>[0]
+) => decideMoisture(input).skip
 
 /**
  * How late a schedule may still start. A restart at 06:02 should still run the
