@@ -463,10 +463,32 @@ const addMinutes = (time: string, minutes: number) => {
   return formatTimeOfDay(Math.floor(total / 60) % 24, total % 60)
 }
 
-export default function ScheduleEditor({
+/**
+ * Remounts the editor whenever the schedule changes.
+ *
+ * The editor seeds `useState` from the loader and uses uncontrolled inputs for
+ * the rest, both of which React carries over when the same route renders a
+ * different record — so navigating between schedules, and most visibly landing
+ * on a freshly duplicated one, left every field showing the previous schedule's
+ * values. Keying by id gives each schedule its own component instance.
+ */
+export default function ScheduleRoute({
   loaderData,
   actionData,
 }: Route.ComponentProps) {
+  return (
+    <ScheduleEditor
+      key={loaderData.schedule.id}
+      loaderData={loaderData}
+      actionData={actionData}
+    />
+  )
+}
+
+function ScheduleEditor({
+  loaderData,
+  actionData,
+}: Pick<Route.ComponentProps, "loaderData" | "actionData">) {
   const { schedule, steps, available, today } = loaderData
   const submit = useSubmit()
   const reorderFetcher = useFetcher()
