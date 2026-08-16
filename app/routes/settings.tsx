@@ -118,6 +118,22 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
     loaderData
   const saving = useIsPending("save-settings")
 
+  // Explicit locale and zone: `toLocaleString()` resolves differently on the
+  // server than in the browser, which shows up as a hydration mismatch.
+  const timeFormat = new Intl.DateTimeFormat("en-GB", {
+    timeZone: settings.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+  const dateTimeFormat = new Intl.DateTimeFormat("en-GB", {
+    timeZone: settings.timezone,
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+
   return (
     <>
       <Card
@@ -239,7 +255,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
             <dd className="mt-1">
               {connection.lastMessageAt == null
                 ? "—"
-                : new Date(connection.lastMessageAt).toLocaleTimeString()}
+                : timeFormat.format(new Date(connection.lastMessageAt))}
             </dd>
           </div>
           <div>
@@ -254,7 +270,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
               <span className="tabular-nums">{version}</span>
               <span className="text-stone-500 dark:text-stone-400">
                 {" · running since "}
-                {new Date(startedAt).toLocaleString()}
+                {dateTimeFormat.format(new Date(startedAt))}
               </span>
             </dd>
           </div>

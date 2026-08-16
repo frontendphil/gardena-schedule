@@ -57,6 +57,27 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
   // Background revalidation must not flash the bar — only real user actions.
   const busy = navigation.state !== "idle"
 
+  /**
+   * Under Home Assistant Ingress the app is mounted at `/api/hassio_ingress/
+   * <token>`, and navigating to the dashboard leaves the URL sitting on exactly
+   * that with no trailing slash. Home Assistant routes
+   * `/api/hassio_ingress/{token}/{path}`, which does not match without the
+   * slash — so the page works until you reload it, and then 404s. Putting the
+   * slash back costs nothing and only ever applies when a basename is set.
+   */
+  useEffect(() => {
+    const basename = window.__reactRouterContext?.basename
+
+    if (basename == null || basename === "/") return
+    if (window.location.pathname !== basename) return
+
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${basename}/${window.location.search}${window.location.hash}`
+    )
+  }, [location.pathname])
+
   // The socket pushes valve state to the server, not the browser. Polling the
   // loader keeps the UI live; it costs nothing against the Gardena quota because
   // loaders only read the in-memory cache.

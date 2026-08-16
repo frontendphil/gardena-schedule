@@ -92,6 +92,11 @@ export const loader = async () => {
     : []
 
   return {
+    // Rendering must not call Date.now(): the server and the browser would
+    // compute it at different instants and the markup would not match, which
+    // React reports as a hydration error and recovers from by throwing the
+    // server-rendered page away.
+    now: now.getTime(),
     timezone: settings.timezone,
     sensorGateEnabled: settings.sensorGateEnabled,
     globalMoistureTarget: settings.globalMoistureTarget,
@@ -140,12 +145,12 @@ const STEP_LABELS: Record<RunStepStatus, { label: string; tone: "neutral" | "act
 }
 
 /** "just now" / "12 min ago" / "3 h ago" — how stale the reading is. */
-const formatAge = (measuredAt: Date | string | null) => {
+const formatAge = (measuredAt: Date | string | null, now: number) => {
   if (measuredAt == null) return null
 
   const minutes = Math.max(
     0,
-    Math.round((Date.now() - new Date(measuredAt).getTime()) / 60_000)
+    Math.round((now - new Date(measuredAt).getTime()) / 60_000)
   )
 
   if (minutes < 2) return "just now"
@@ -157,6 +162,7 @@ const formatAge = (measuredAt: Date | string | null) => {
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
   const {
+    now,
     timezone,
     sensorGateEnabled,
     globalMoistureTarget,
@@ -206,7 +212,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
           description={
             measuredAt == null
               ? "Sensor reading"
-              : `Measured ${formatAge(measuredAt)} · ${dateFormat.format(new Date(measuredAt))}`
+              : `Measured ${formatAge(measuredAt, now)} · ${dateFormat.format(new Date(measuredAt))}`
           }
           actions={
             <Form method="post" action={href("/refresh")}>
@@ -272,7 +278,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                 <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
                   {sensorName ?? "The sensor"} is down to {batteryLevel}%
                   {batteryMeasuredAt != null &&
-                    ` (as of ${formatAge(batteryMeasuredAt)})`}
+                    ` (as of ${formatAge(batteryMeasuredAt, now)})`}
                   . A flat sensor stops reporting, and moisture gating then
                   waters on a stale reading.
                 </p>
