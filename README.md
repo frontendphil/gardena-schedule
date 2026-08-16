@@ -1,11 +1,26 @@
 # Gardena Scheduler
 
+[![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Ffrontendphil%2Fgardena-schedule)
+
 A scheduling app for a GARDENA smart irrigation system, built on the official
 Gardena Smart System API and backed by a local SQLite database.
 
 Schedules are authored the way you actually think about watering — *"start at
 06:30, then run these sprinklers for these durations"* — and the app derives every
 clock time from that.
+
+> [!WARNING]
+> **This app has no login of its own.** Anyone who can reach it can open your
+> valves.
+>
+> Installed as a Home Assistant add-on it runs behind **Ingress**, so Home
+> Assistant authenticates every request and no port is published — that is the
+> supported way to run it, and the default.
+>
+> Publishing a host port under the add-on's *Network* settings, or running the
+> container directly, bypasses that entirely. Only do it on a network you trust,
+> and never forward the port or put it on the internet without an
+> authenticating proxy in front.
 
 ## Why there is a database
 
@@ -78,9 +93,9 @@ pnpm dev
 | `GARDENA_APPLICATION_KEY` / `GARDENA_APPLICATION_SECRET` | From the [Husqvarna developer portal](https://developer.husqvarnagroup.cloud/). The app needs the Gardena Smart System API connected to it. |
 | `DATABASE_PATH` | SQLite file location. Defaults to `./data/gardena.db`. |
 
-Run directly, the app has **no authentication** and assumes a trusted network.
-As a Home Assistant add-on it runs behind Ingress instead, so Home Assistant
-authenticates every request and no port is exposed.
+Run this way the app is unauthenticated — see the warning at the top. It is fine
+for local development; it is not something to leave listening on a shared
+network.
 
 ## Development
 
@@ -107,8 +122,10 @@ gardena-scheduler/         # the add-on
   DOCS.md                  # rendered as the add-on's Documentation tab
 ```
 
-1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, and add
-   `https://github.com/frontendphil/gardena-schedule`.
+1. Click the badge at the top of this README — it opens the *add repository*
+   dialog on your own Home Assistant with the URL filled in. Or add
+   `https://github.com/frontendphil/gardena-schedule` by hand under
+   **Settings → Add-ons → Add-on Store → ⋮ → Repositories**.
 2. Install **Gardena Scheduler** from the store.
 3. Fill in your Gardena key and secret on the **Configuration** tab, start it,
    and open the web UI.
@@ -155,6 +172,15 @@ docker run -p 3000:3000 --env-file .env -v gardena-data:/data gardena-scheduler
 
 Migrations run automatically on boot. **The `/data` volume must be persistent** —
 without it, every redeploy wipes your schedules.
+
+### Not HACS
+
+HACS does not distribute add-ons, and this is not a gap that repository layout
+can work around: HACS installs code that runs *inside* Home Assistant
+(integrations, dashboard plugins, themes), whereas an add-on is a separate
+container that Supervisor manages — and Supervisor already has its own store.
+A custom add-on repository, as above, *is* the equivalent distribution channel,
+and it gives real version tracking and Update buttons.
 
 ### Not Vercel
 
