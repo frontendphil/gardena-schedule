@@ -128,14 +128,23 @@ published.
 
 ### Publishing a new version
 
-`garden`-side and code-side versions must agree, so the release workflow reads
-the version out of the manifest rather than the git tag:
+The manifest version is the source of truth — the release workflow reads it from
+`config.yaml` rather than the git tag, so the image tag and the add-on version
+cannot drift apart. That also means **bumping the manifest is what makes Home
+Assistant offer an update**; tagging alone does nothing.
 
-1. Bump `version:` in `gardena-scheduler/config.yaml`.
-2. Commit, tag (`git tag v1.5.0`), and push the tag.
-3. `.github/workflows/release.yml` builds `aarch64` + `amd64` images and pushes
-   them to GHCR under that version.
-4. Home Assistant offers the update.
+1. Bump `version:` in `gardena-scheduler/config.yaml` and commit.
+2. Tag it to match (`git tag v1.6.2`) and push the tag.
+3. `release.yml` builds `aarch64` + `amd64` natively and pushes both to GHCR.
+   (Native runners per architecture: emulating arm64 crashes V8 under QEMU.)
+4. Publish the GitHub release and write the notes there.
+5. `changelog.yml` copies those notes into
+   `gardena-scheduler/CHANGELOG.md` and commits it — Home Assistant reads the
+   changelog from that file and never sees GitHub Releases.
+
+Editing a published release rewrites its section rather than adding a second
+one, and a release with empty notes is skipped. Entries are inserted newest-
+release-first, so a backport published after a newer version appears above it.
 
 ### As a plain Docker container
 

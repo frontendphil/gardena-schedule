@@ -1,0 +1,96 @@
+name: Changelog
+
+# Home Assistant reads the changelog from `CHANGELOG.md` in the add-on folder on
+# the default branch — it never sees GitHub Releases. This copies the release
+# notes you write on GitHub into that file, so writing them once is enough.
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to sync (e.g. v1.6.2)
+        required: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # Check out the branch, not the tag: the commit has to land somewhere
+      # Home Assistant will actually read.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Fetch release notes
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json tagName,body,publishedAt > release.json
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Update CHANGELOG.md
+        id: update
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+
+          release = json.load(open("release.json"))
+          tag = os.environ["TAG"]
+          version = tag.lstrip("v")
+          body = (release.get("body") or "").strip()
+          date = (release.get("publishedAt") or "")[:10]
+
+          path = pathlib.Path("gardena-scheduler/CHANGELOG.md")
+          text = path.read_text()
+
+          if not body:
+              print("Release has no notes; nothing to add.")
+              raise SystemExit(0)
+
+          heading = f"## {version}"
+          entry = f"{heading}{f' - {date}' if date else ''}\n\n{body}\n"
+
+          # An edited release replaces its own section rather than stacking a
+          # duplicate; a new one goes below the intro, above the newest entry.
+          pattern = re.compile(
+              rf"^## {re.escape(version)}\b.*?(?=^## |\Z)", re.S | re.M
+          )
+
+          if pattern.search(text):
+              updated = pattern.sub(entry + "\n", text, count=1)
+          else:
+              marker = "\n## "
+              index = text.find(marker)
+              updated = (
+                  text[: index + 1] + entry + "\n" + text[index + 1 :]
+                  if index != -1
+                  else text.rstrip() + "\n\n" + entry
+              )
+
+          if updated == text:
+              print("No change.")
+              raise SystemExit(0)
+
+          path.write_text(updated)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("changed=true\n")
+          PY
+
+      - name: Commit
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          rm -f release.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gardena-scheduler/CHANGELOG.md
+          git commit -m "Add ${{ steps.release.outputs.tag }} to the add-on changelog"
+          git push

@@ -30,6 +30,9 @@ jobs:
           version=$(grep -E '^version:' gardena-scheduler/config.yaml | sed 's/version:[[:space:]]*//' | tr -d '"')
           test -n "$version" || { echo "gardena-scheduler/config.yaml has no version"; exit 1; }
           test -f repository.yaml || { echo "repository.yaml missing"; exit 1; }
+          for f in icon.png logo.png DOCS.md CHANGELOG.md; do
+            test -f "gardena-scheduler/$f" || { echo "gardena-scheduler/$f missing"; exit 1; }
+          done
           echo "add-on version $version"
 
       # Migrations ship in the image and run at boot; a schema change without a
