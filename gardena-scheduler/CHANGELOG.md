@@ -4,15 +4,11 @@ Home Assistant shows this file on the add-on's page and when an update is
 available. Entries are added automatically from GitHub release notes — see
 "Publishing a new version" in the repository README.
 
-## 1.6.4
+## 1.6.4 - 2026-08-16
 
-- Switched-off sprinklers are no longer commanded when a schedule runs. Turning
-  a sprinkler off previously only removed it from the pickers, so any schedule
-  that already contained it kept opening that valve every run — and commanding a
-  valve port with nothing wired to it makes the controller report a fault, which
-  Gardena pushes as a notification.
-- The schedule editor now lists any switched-off sprinklers it still references,
-  with a button to remove them, and the schedule's times exclude them.
+Make sure no hidden valves are part of any execution.
+
+**Full Changelog**: https://github.com/frontendphil/gardena-schedule/compare/v1.6.3...v1.6.4
 
 ## 1.6.3
 
