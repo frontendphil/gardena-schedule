@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="250" height="100" viewBox="0 0 250 100">
+  <!--
+    Source for logo.png. Home Assistant shows this on both light and dark
+    backgrounds, so the wordmark sits on its own panel rather than relying on a
+    text colour that works against only one of them.
+  -->
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10b981" />
+      <stop offset="1" stop-color="#047857" />
+    </linearGradient>
+  </defs>
+
+  <rect width="250" height="100" rx="20" fill="url(#panel)" />
+
+  <!-- Same droplet-and-clock mark as the icon, scaled down. -->
+  <g transform="translate(20 18) scale(0.52)">
+    <path
+      d="M64 18C64 18 99 58 99 82A35 35 0 0 1 29 82C29 58 64 18 64 18Z"
+      fill="#ffffff"
+    />
+    <circle cx="64" cy="83" r="21" fill="none" stroke="#059669" stroke-width="7" />
+    <path
+      d="M64 70v13h10"
+      fill="none"
+      stroke="#059669"
+      stroke-width="7"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <g
+    font-family="system-ui, -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif"
+    fill="#ffffff"
+  >
+    <text x="92" y="46" font-size="27" font-weight="700" letter-spacing="-0.4">
+      Gardena
+    </text>
+    <text x="92" y="76" font-size="25" font-weight="400" fill="#d1fae5">
+      Scheduler
+    </text>
+  </g>
+</svg>

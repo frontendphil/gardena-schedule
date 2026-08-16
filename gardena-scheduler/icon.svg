@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!--
+    Source for icon.png. A droplet carrying a clock face: the add-on is about
+    *when* water runs, not just that it does. Deliberately unlike GARDENA's own
+    branding — this is a third-party add-on and should not read as official.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10b981" />
+      <stop offset="1" stop-color="#047857" />
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#tile)" />
+
+  <!-- Droplet: point at the top, round bulb below. -->
+  <path
+    d="M64 18C64 18 99 58 99 82A35 35 0 0 1 29 82C29 58 64 18 64 18Z"
+    fill="#ffffff"
+  />
+
+  <!-- Clock knocked out of the bulb, in the tile colour so it reads as a hole. -->
+  <circle cx="64" cy="83" r="21" fill="none" stroke="#059669" stroke-width="6" />
+  <path
+    d="M64 70v13h10"
+    fill="none"
+    stroke="#059669"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
