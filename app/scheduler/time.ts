@@ -175,9 +175,19 @@ export const hasDay = (daysOfWeek: number, weekday: number) =>
 export const toggleDay = (daysOfWeek: number, weekday: number) =>
   daysOfWeek ^ (1 << weekday)
 
-export const formatDays = (daysOfWeek: number) => {
-  if ((daysOfWeek & ALL_DAYS) === ALL_DAYS) return "Every day"
-  if (daysOfWeek === 0) return "Never"
+/**
+ * `t` is passed in rather than imported so this module stays free of React and
+ * usable from the scheduler; callers that do not care pass nothing and get
+ * English.
+ */
+export const formatDays = (
+  daysOfWeek: number,
+  t: (text: string) => string = (text) => text
+) => {
+  if ((daysOfWeek & ALL_DAYS) === ALL_DAYS) return t("Every day")
+  if (daysOfWeek === 0) return t("Never")
 
-  return DAY_NAMES.filter((_, index) => hasDay(daysOfWeek, index)).join(", ")
+  return DAY_NAMES.filter((_, index) => hasDay(daysOfWeek, index))
+    .map((day) => t(day))
+    .join(", ")
 }

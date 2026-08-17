@@ -12,6 +12,8 @@ import {
   Toggle,
   useIsPending,
 } from "../components/ui"
+import { LANGUAGES, LANGUAGE_LABELS, useLocale, useT } from "../i18n"
+import { translatorFor } from "../i18n/server"
 import { db } from "../db"
 import {
   locations as locationsTable,
@@ -87,6 +89,7 @@ export const loader = async () => {
 }
 
 export const action = async ({ request }: Route.ActionArgs) => {
+  const t = translatorFor(request)
   const formData = await request.formData()
 
   const target = Math.min(
@@ -101,13 +104,18 @@ export const action = async ({ request }: Route.ActionArgs) => {
     // calculation throw.
     new Intl.DateTimeFormat("en-US", { timeZone: timezone })
   } catch {
-    return { error: `"${timezone}" is not a valid timezone.` }
+    return { error: t('"{zone}" is not a valid timezone.', { zone: timezone }) }
   }
 
   const maxReadingAge = Math.min(
     10080,
     Math.max(5, Math.round(Number(formData.get("maxReadingAgeMinutes") ?? 180)))
   )
+
+  const requested = String(formData.get("language") ?? "auto")
+  const language = (LANGUAGES as readonly string[]).includes(requested)
+    ? requested
+    : "auto"
 
   const sensorId = String(formData.get("sensorId") ?? "").trim()
 
@@ -118,6 +126,7 @@ export const action = async ({ request }: Route.ActionArgs) => {
       sensorId: sensorId === "" ? null : sensorId,
       maxReadingAgeMinutes: Number.isNaN(maxReadingAge) ? 180 : maxReadingAge,
       timezone,
+      language,
     })
     .where(eq(settingsTable.id, 1))
     .run()
@@ -137,17 +146,20 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
     canForceMeasurement,
     currentReadingAge,
   } = loaderData
+  const t = useT()
   const saving = useIsPending("save-settings")
 
   // Explicit locale and zone: `toLocaleString()` resolves differently on the
   // server than in the browser, which shows up as a hydration mismatch.
-  const timeFormat = new Intl.DateTimeFormat("en-GB", {
+  const locale = useLocale()
+
+  const timeFormat = new Intl.DateTimeFormat(locale, {
     timeZone: settings.timezone,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   })
-  const dateTimeFormat = new Intl.DateTimeFormat("en-GB", {
+  const dateTimeFormat = new Intl.DateTimeFormat(locale, {
     timeZone: settings.timezone,
     day: "numeric",
     month: "short",
@@ -158,8 +170,10 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
   return (
     <>
       <Card
-        title="Watering rules"
-        description="Applies to every schedule. Individual sprinklers can override the moisture target."
+        title={t("Watering rules")}
+        description={t(
+          "Applies to every schedule. Individual sprinklers can override the moisture target."
+        )}
       >
         <Form method="post" className="space-y-5">
           <input type="hidden" name="intent" value="save-settings" />
@@ -170,20 +184,20 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
             />
             <span>
               <span className="text-sm font-medium">
-                Let the soil sensor decide
+                {t("Let the soil sensor decide")}
               </span>
               <span className="mt-1 block text-sm text-stone-500 dark:text-stone-400">
-                A sprinkler is skipped when the sensor reads at or above its
-                target. Checked again for each sprinkler as the schedule runs, so
-                a long run reacts to the soil as it goes.
+                {t(
+                  "A sprinkler is skipped when the sensor reads at or above its target. Checked again for each sprinkler as the schedule runs, so a long run reacts to the soil as it goes."
+                )}
               </span>
             </span>
           </label>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
-              label="Global moisture target"
-              hint="Water only while the reading is below this."
+              label={t("Global moisture target")}
+              hint={t("Water only while the reading is below this.")}
             >
               <div className="mt-1 flex items-center gap-2">
                 <Input
@@ -199,19 +213,19 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
               </div>
             </Field>
 
-            <Field label="Sensor" hint="Used for the moisture check.">
+            <Field label={t("Sensor")} hint={t("Used for the moisture check.")}>
               <Select
                 name="sensorId"
                 defaultValue={settings.sensorId ?? ""}
                 className="mt-1"
               >
-                <option value="">First available</option>
+                <option value="">{t("First available")}</option>
                 {sensors.map((sensor) => (
                   <option key={sensor.id} value={sensor.id}>
                     {sensor.name}
                     {sensor.location == null ? "" : ` (${sensor.location})`} ·{" "}
                     {sensor.soilHumidity == null
-                      ? "no reading"
+                      ? t("no reading")
                       : `${sensor.soilHumidity}%`}
                   </option>
                 ))}
@@ -220,11 +234,15 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
           </div>
 
           <Field
-            label="Trust a reading for"
+            label={t("Trust a reading for")}
             hint={
               canForceMeasurement
-                ? "Past this, the sensor is asked to measure again before the gate decides."
-                : "Past this, the reading is treated as unknown and the sprinkler waters."
+                ? t(
+                    "Past this, the sensor is asked to measure again before the gate decides."
+                  )
+                : t(
+                    "Past this, the reading is treated as unknown and the sprinkler waters."
+                  )
             }
           >
             <div className="mt-1 flex items-center gap-2">
@@ -237,9 +255,11 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
                 className="max-w-32"
               />
               <span className="text-sm text-stone-500 dark:text-stone-400">
-                minutes
+                {t("minutes")}
                 {currentReadingAge != null &&
-                  ` · current reading is ${currentReadingAge} min old`}
+                  t(" · current reading is {age} min old", {
+                    age: currentReadingAge,
+                  })}
               </span>
             </div>
           </Field>
@@ -247,19 +267,25 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
           <div className="rounded-lg bg-stone-100 px-4 py-3 text-sm dark:bg-stone-800/50">
             <p className="font-medium">
               {canForceMeasurement
-                ? "Can force a measurement"
-                : "Cannot force a measurement"}
+                ? t("Can force a measurement")
+                : t("Cannot force a measurement")}
             </p>
             <p className="mt-1 text-stone-600 dark:text-stone-400">
               {canForceMeasurement
-                ? "A Husqvarna account is configured, so a stale reading is refreshed before the gate decides. This uses Gardena's own app API, which is undocumented and may change; if it fails, the run falls back to watering."
-                : "Gardena's public API cannot ask the sensor to measure — only its own app can. Without a Husqvarna account configured, a reading older than the limit above counts as unknown and the sprinkler waters, so a sensor that stops reporting can never silently suppress watering."}
+                ? t(
+                    "A Husqvarna account is configured, so a stale reading is refreshed before the gate decides. This uses Gardena's own app API, which is undocumented and may change; if it fails, the run falls back to watering."
+                  )
+                : t(
+                    "Gardena's public API cannot ask the sensor to measure — only its own app can. Without a Husqvarna account configured, a reading older than the limit above counts as unknown and the sprinkler waters, so a sensor that stops reporting can never silently suppress watering."
+                  )}
             </p>
           </div>
 
           {overrides.length > 0 && (
             <div className="rounded-lg bg-stone-100 px-4 py-3 text-sm dark:bg-stone-800/50">
-              <p className="font-medium">Sprinklers with their own target</p>
+              <p className="font-medium">
+                {t("Sprinklers with their own target")}
+              </p>
               <ul className="mt-1 space-y-0.5 text-stone-600 dark:text-stone-400">
                 {overrides.map((override) => (
                   <li key={override.name}>
@@ -270,7 +296,10 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
             </div>
           )}
 
-          <Field label="Timezone" hint="Schedule start times are local to this zone.">
+          <Field
+            label={t("Timezone")}
+            hint={t("Schedule start times are local to this zone.")}
+          >
             <Input
               name="timezone"
               defaultValue={settings.timezone}
@@ -278,12 +307,26 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
             />
           </Field>
 
+          <Field label={t("Language")} hint={t("Used for this app's own interface.")}>
+            <Select
+              name="language"
+              defaultValue={settings.language}
+              className="mt-1"
+            >
+              {LANGUAGES.map((code) => (
+                <option key={code} value={code}>
+                  {t(LANGUAGE_LABELS[code])}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
           <div className="flex items-center gap-3">
             <Button type="submit" variant="primary" busy={saving}>
-              Save
+              {t("Save")}
             </Button>
             {actionData != null && "ok" in actionData && (
-              <SavedFlash token={actionData.at} />
+              <SavedFlash token={actionData.at}>{t("Saved")}</SavedFlash>
             )}
             {actionData != null && "error" in actionData && (
               <span className="text-sm text-red-600 dark:text-red-400">
@@ -295,22 +338,28 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
       </Card>
 
       <Card
-        title="Gardena connection"
-        description="State arrives over a WebSocket, so browsing this app costs no API requests."
+        title={t("Gardena connection")}
+        description={t(
+          "State arrives over a WebSocket, so browsing this app costs no API requests."
+        )}
       >
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-stone-500 dark:text-stone-400">Status</dt>
+            <dt className="text-stone-500 dark:text-stone-400">
+              {t("Status")}
+            </dt>
             <dd className="mt-1">
               {connection.connected ? (
-                <Badge tone="good">Connected</Badge>
+                <Badge tone="good">{t("Connected")}</Badge>
               ) : (
-                <Badge tone="bad">Disconnected</Badge>
+                <Badge tone="bad">{t("Disconnected")}</Badge>
               )}
             </dd>
           </div>
           <div>
-            <dt className="text-stone-500 dark:text-stone-400">Last update</dt>
+            <dt className="text-stone-500 dark:text-stone-400">
+              {t("Last update")}
+            </dt>
             <dd className="mt-1">
               {connection.lastMessageAt == null
                 ? "—"
@@ -319,23 +368,25 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
           </div>
           <div>
             <dt className="text-stone-500 dark:text-stone-400">
-              API requests this process
+              {t("API requests this process")}
             </dt>
             <dd className="mt-1 tabular-nums">{requests.total}</dd>
           </div>
           <div>
-            <dt className="text-stone-500 dark:text-stone-400">Build</dt>
+            <dt className="text-stone-500 dark:text-stone-400">{t("Build")}</dt>
             <dd className="mt-1">
               <span className="tabular-nums">{version}</span>
               <span className="text-stone-500 dark:text-stone-400">
-                {" · running since "}
+                {t(" · running since ")}
                 {dateTimeFormat.format(new Date(startedAt))}
               </span>
             </dd>
           </div>
           {connection.lastError != null && (
             <div className="sm:col-span-2">
-              <dt className="text-stone-500 dark:text-stone-400">Last error</dt>
+              <dt className="text-stone-500 dark:text-stone-400">
+                {t("Last error")}
+              </dt>
               <dd className="mt-1 text-red-600 dark:text-red-400">
                 {connection.lastError}
               </dd>
@@ -345,7 +396,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
 
         <details className="mt-4">
           <summary className="cursor-pointer text-sm text-stone-500 dark:text-stone-400">
-            Requests by endpoint
+            {t("Requests by endpoint")}
           </summary>
           <ul className="mt-2 space-y-1 font-mono text-xs">
             {Object.entries(requests.byPath).map(([path, count]) => (

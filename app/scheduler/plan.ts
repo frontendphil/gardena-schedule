@@ -393,14 +393,18 @@ export const getNextOccurrence = (
 }
 
 /** Human-readable recurrence, e.g. "Every second day" or "Mon, Wed, Fri". */
-export const formatRecurrence = (schedule: Schedule) => {
-  if (schedule.recurrence === "weekly") return formatDays(schedule.daysOfWeek)
+export const formatRecurrence = (
+  schedule: Schedule,
+  t: (text: string, vars?: Record<string, string | number>) => string = (text) =>
+    text
+) => {
+  if (schedule.recurrence === "weekly") return formatDays(schedule.daysOfWeek, t)
 
   const interval = Math.max(1, schedule.intervalDays)
 
-  if (interval === 1) return "Every day"
-  if (interval === 2) return "Every second day"
-  if (interval === 3) return "Every third day"
+  if (interval === 1) return t("Every day")
+  if (interval === 2) return t("Every second day")
+  if (interval === 3) return t("Every third day")
 
-  return `Every ${interval} days`
+  return t("Every {count} days", { count: interval })
 }

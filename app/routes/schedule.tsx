@@ -14,6 +14,8 @@ import {
   cx,
   useIsPending,
 } from "../components/ui"
+import { useT } from "../i18n"
+import { translatorFor } from "../i18n/server"
 import { db } from "../db"
 import {
   locations as locationsTable,
@@ -137,6 +139,7 @@ const compactPositions = (scheduleId: number) => {
 }
 
 export const action = async ({ request, params }: Route.ActionArgs) => {
+  const t = translatorFor(request)
   const scheduleId = Number(params.scheduleId)
   const formData = await request.formData()
   const intent = formData.get("intent")
@@ -284,7 +287,7 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
   if (intent === "add-step") {
     const valveId = String(formData.get("valveId") ?? "")
 
-    if (valveId === "") return { error: "Pick a sprinkler to add." }
+    if (valveId === "") return { error: t("Pick a sprinkler to add.") }
 
     const next = db
       .select({ max: sql<number | null>`max(${scheduleStepsTable.position})` })
@@ -397,7 +400,14 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
         .map((step) => valveNames.get(step.valveId) ?? step.valveId)
 
       return {
-        error: `${clashing.slice(0, -1).join(", ")} and ${clashing.at(-1)} are on the same controller, which can only open ${MAX_PARALLEL_PER_CONTROLLER} valves at once.`,
+        error: t(
+          "{first} and {last} are on the same controller, which can only open {max} valves at once.",
+          {
+            first: clashing.slice(0, -1).join(", "),
+            last: clashing.at(-1) ?? "",
+            max: MAX_PARALLEL_PER_CONTROLLER,
+          }
+        ),
       }
     }
 
@@ -495,6 +505,7 @@ function ScheduleEditor({
   const { schedule, steps, available, today } = loaderData
   const submit = useSubmit()
   const reorderFetcher = useFetcher()
+  const t = useT()
 
   // Hoisted: these are hooks, and two of the buttons below live inside
   // conditional JSX where calling them inline would change the hook order.
@@ -607,13 +618,13 @@ function ScheduleEditor({
   return (
     <>
       <Card
-        title="Schedule"
+        title={t("Schedule")}
         actions={
           <div className="flex items-center gap-2">
             <Form method="post">
               <input type="hidden" name="intent" value="duplicate-schedule" />
               <Button type="submit" busy={duplicating}>
-                Duplicate
+                {t("Duplicate")}
               </Button>
             </Form>
             <Form method="post">
@@ -623,12 +634,12 @@ function ScheduleEditor({
                 variant="danger"
                 busy={deleting}
                 onClick={(event) => {
-                  if (!confirm(`Delete "${schedule.name}"?`)) {
+                  if (!confirm(t("Delete “{name}”?", { name: schedule.name }))) {
                     event.preventDefault()
                   }
                 }}
               >
-                Delete
+                {t("Delete")}
               </Button>
             </Form>
           </div>
@@ -638,10 +649,13 @@ function ScheduleEditor({
           <input type="hidden" name="intent" value="save-schedule" />
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name">
+            <Field label={t("Name")}>
               <Input name="name" defaultValue={schedule.name} className="mt-1" />
             </Field>
-            <Field label="Start time" hint="Local time in your configured timezone.">
+            <Field
+              label={t("Start time")}
+              hint={t("Local time in your configured timezone.")}
+            >
               <Input
                 type="time"
                 name="startTime"
@@ -652,7 +666,7 @@ function ScheduleEditor({
             </Field>
           </div>
 
-          <Field label="Repeat">
+          <Field label={t("Repeat")}>
             <Select
               name="recurrence"
               value={recurrence}
@@ -661,8 +675,8 @@ function ScheduleEditor({
               }
               className="mt-1"
             >
-              <option value="weekly">On certain weekdays</option>
-              <option value="interval">Every N days</option>
+              <option value="weekly">{t("On certain weekdays")}</option>
+              <option value="interval">{t("Every N days")}</option>
             </Select>
           </Field>
 
@@ -682,13 +696,13 @@ function ScheduleEditor({
                     defaultChecked={hasDay(schedule.daysOfWeek, index)}
                     className="sr-only"
                   />
-                  {day}
+                  {t(day)}
                 </label>
               ))}
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Run every" hint="2 = every second day.">
+              <Field label={t("Run every")} hint={t("2 = every second day.")}>
                 <div className="mt-1 flex items-center gap-2">
                   <Input
                     type="number"
@@ -698,13 +712,13 @@ function ScheduleEditor({
                     defaultValue={schedule.intervalDays}
                   />
                   <span className="text-sm text-stone-500 dark:text-stone-400">
-                    days
+                    {t("days")}
                   </span>
                 </div>
               </Field>
               <Field
-                label="Starting from"
-                hint="Sets which days the cycle lands on."
+                label={t("Starting from")}
+                hint={t("Sets which days the cycle lands on.")}
               >
                 <Input
                   type="date"
@@ -719,16 +733,18 @@ function ScheduleEditor({
           <div className="flex items-center justify-between gap-4 border-t border-stone-200 pt-4 dark:border-stone-800">
             <label className="flex items-center gap-3">
               <Toggle name="enabled" defaultChecked={schedule.enabled} />
-              <span className="text-sm font-medium">Schedule enabled</span>
+              <span className="text-sm font-medium">
+                {t("Schedule enabled")}
+              </span>
             </label>
             <div className="flex items-center gap-3">
-              <SavedFlash token={actionData} />
+              <SavedFlash token={actionData}>{t("Saved")}</SavedFlash>
               <Button
                 type="submit"
                 variant="primary"
                 busy={savingSchedule}
               >
-                Save
+                {t("Save")}
               </Button>
             </div>
           </div>
@@ -745,12 +761,16 @@ function ScheduleEditor({
         title="Sprinklers"
         description={
           timeline.length === 0
-            ? "Add sprinklers in the order they should run."
-            : `${startTime}–${addMinutes(startTime, totalMinutes)} · ${totalMinutes} min total`
+            ? t("Add sprinklers in the order they should run.")
+            : t("{start}–{end} · {minutes} min total", {
+                start: startTime,
+                end: addMinutes(startTime, totalMinutes),
+                minutes: totalMinutes,
+              })
         }
       >
         {timeline.length === 0 ? (
-          <EmptyState title="No sprinklers in this schedule" />
+          <EmptyState title={t("No sprinklers in this schedule")} />
         ) : (
           <ol className="space-y-2">
             {timeline.map((step, index) => {
@@ -817,7 +837,7 @@ function ScheduleEditor({
                   )}
                   {grouped && firstOfGroup && (
                     <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white">
-                      {step.groupSize} at once
+                      {t("{count} at once", { count: step.groupSize })}
                     </span>
                   )}
                 </span>
@@ -842,14 +862,14 @@ function ScheduleEditor({
                     aria-label={`Duration for ${step.name} in minutes`}
                   />
                   <span className="text-sm text-stone-500 dark:text-stone-400">
-                    min
+                    {t("min")}
                   </span>
                 </Form>
 
                 <div className="flex items-center justify-end gap-2">
                   {index === 0 ? (
                     <span className="text-xs text-stone-400 dark:text-stone-500">
-                      starts the run
+                      {t("starts the run")}
                     </span>
                   ) : (
                     <Form method="post" className="flex items-center gap-2">
@@ -860,7 +880,7 @@ function ScheduleEditor({
                       />
                       <input type="hidden" name="stepId" value={step.id} />
                       <span className="text-xs text-stone-500 dark:text-stone-400">
-                        With previous
+                        {t("With previous")}
                       </span>
                       <Toggle
                         name="startsWithPrevious"
@@ -893,12 +913,12 @@ function ScheduleEditor({
         {disabledSteps.length > 0 && (
           <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
             <p className="font-medium">
-              Switched off, so never watered
+              {t("Switched off, so never watered")}
             </p>
             <p className="mt-1">
-              These sprinklers are off on the Sprinklers page. They are skipped
-              entirely — no command is sent to the valve — and the times above
-              already exclude them.
+              {t(
+                "These sprinklers are off on the Sprinklers page. They are skipped entirely — no command is sent to the valve — and the times above already exclude them."
+              )}
             </p>
             <ul className="mt-3 space-y-2">
               {disabledSteps.map((step) => (
@@ -915,7 +935,7 @@ function ScheduleEditor({
                       variant="ghost"
                       aria-label={`Remove ${step.name}`}
                     >
-                      Remove
+                      {t("Remove")}
                     </Button>
                   </Form>
                 </li>
@@ -932,7 +952,7 @@ function ScheduleEditor({
             >
               <input type="hidden" name="intent" value="add-step" />
               <div className="min-w-40 flex-1">
-                <Field label="Add sprinkler">
+                <Field label={t("Add sprinkler")}>
                   <Select name="valveId" className="mt-1">
                     {available.map((valve) => (
                       <option key={valve.id} value={valve.id}>
@@ -943,14 +963,14 @@ function ScheduleEditor({
                 </Field>
               </div>
               <Button type="submit" busy={addingStep}>
-                Add
+                {t("Add")}
               </Button>
             </Form>
 
             <Form method="post">
               <input type="hidden" name="intent" value="add-all-steps" />
               <Button type="submit" busy={addingAll}>
-                Add all {available.length > 1 && `(${available.length})`}
+                {t("Add all")} {available.length > 1 && `(${available.length})`}
               </Button>
             </Form>
           </div>

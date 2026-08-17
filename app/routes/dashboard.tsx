@@ -1,6 +1,8 @@
 import { Link, href, useFetcher } from "react-router"
 
 import { Badge, Button, Card, EmptyState, cx } from "../components/ui"
+import { useLocale, useT, type Translate } from "../i18n"
+import { translatorFor } from "../i18n/server"
 import { db } from "../db"
 import {
   scheduleSteps as scheduleStepsTable,
@@ -22,7 +24,8 @@ import { getRecentRuns } from "../scheduler/runner"
 import { formatZonedTime, getLocalDateKey } from "../scheduler/time"
 import type { Route } from "./+types/dashboard"
 
-export const loader = async () => {
+export const loader = async ({ request }: Route.LoaderArgs) => {
+  const t = translatorFor(request)
   const settings = db.select().from(settingsTable).get()!
   const now = new Date()
 
@@ -51,7 +54,7 @@ export const loader = async () => {
       return {
         id: schedule.id,
         name: schedule.name,
-        recurrence: formatRecurrence(schedule),
+        recurrence: formatRecurrence(schedule, t),
         nextAt,
         startTime: formatZonedTime(nextAt, settings.timezone),
         endTime: formatZonedTime(plan.endsAt, settings.timezone),
@@ -128,32 +131,43 @@ export const loader = async () => {
   }
 }
 
-const STEP_LABELS: Record<RunStepStatus, { label: string; tone: "neutral" | "active" | "good" | "warn" | "bad" }> = {
-  pending: { label: "Pending", tone: "neutral" },
-  running: { label: "Watering", tone: "active" },
-  completed: { label: "Watered", tone: "good" },
-  skipped_moisture: { label: "Skipped — soil wet", tone: "warn" },
-  skipped_master_off: { label: "Skipped — all off", tone: "warn" },
-  skipped_schedule_off: { label: "Skipped — schedule off", tone: "warn" },
-  skipped_unavailable: { label: "Skipped — unreachable", tone: "bad" },
-  failed: { label: "Failed", tone: "bad" },
-}
+type Tone = "neutral" | "active" | "good" | "warn" | "bad"
+
+const stepLabels = (
+  t: Translate
+): Record<RunStepStatus, { label: string; tone: Tone }> => ({
+  pending: { label: t("Pending"), tone: "neutral" },
+  running: { label: t("Watering"), tone: "active" },
+  completed: { label: t("Watered"), tone: "good" },
+  skipped_moisture: { label: t("Skipped — soil wet"), tone: "warn" },
+  skipped_master_off: { label: t("Skipped — all off"), tone: "warn" },
+  skipped_schedule_off: { label: t("Skipped — schedule off"), tone: "warn" },
+  skipped_unavailable: { label: t("Skipped — unreachable"), tone: "bad" },
+  failed: { label: t("Failed"), tone: "bad" },
+})
 
 /** Result of pressing "Measure now", reported rather than failing silently. */
-const MEASURE_OUTCOMES: Record<string, string> = {
-  refreshed: "The sensor took a new reading.",
-  "timed-out":
-    "Gardena accepted the request, but no new reading arrived within 30 seconds. The sensor declines to measure again straight after a previous reading — wait a minute and try again.",
-  failed:
-    "Could not reach Gardena's app API — check the account email and password on Settings.",
-  "not-configured":
-    "No Husqvarna account is configured, so the sensor cannot be asked to measure.",
-  "no-sensor": "No soil sensor is reporting.",
-  "fresh-enough": "The reading was already current.",
-}
+const measureOutcomes = (t: Translate): Record<string, string> => ({
+  refreshed: t("The sensor took a new reading."),
+  "timed-out": t(
+    "Gardena accepted the request, but no new reading arrived within 30 seconds. The sensor declines to measure again straight after a previous reading — wait a minute and try again."
+  ),
+  failed: t(
+    "Could not reach Gardena's app API — check the account email and password on Settings."
+  ),
+  "not-configured": t(
+    "No Husqvarna account is configured, so the sensor cannot be asked to measure."
+  ),
+  "no-sensor": t("No soil sensor is reporting."),
+  "fresh-enough": t("The reading was already current."),
+})
 
 /** "just now" / "12 min ago" / "3 h ago" — how stale the reading is. */
-const formatAge = (measuredAt: Date | string | null, now: number) => {
+const formatAge = (
+  measuredAt: Date | string | null,
+  now: number,
+  t: Translate
+) => {
   if (measuredAt == null) return null
 
   const minutes = Math.max(
@@ -161,11 +175,14 @@ const formatAge = (measuredAt: Date | string | null, now: number) => {
     Math.round((now - new Date(measuredAt).getTime()) / 60_000)
   )
 
-  if (minutes < 2) return "just now"
-  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 2) return t("just now")
+  if (minutes < 60) return t("{minutes} min ago", { minutes })
 
   const hours = Math.round(minutes / 60)
-  return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`
+
+  return hours < 24
+    ? t("{hours} h ago", { hours })
+    : t("{days} d ago", { days: Math.round(hours / 24) })
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
@@ -191,6 +208,10 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
   // Fetchers rather than navigations: these actions stay on this page, and a
   // redirect would be re-prefixed by Ingress. Both revalidate the loader on
   // completion, so the reading updates without any extra plumbing.
+  const t = useT()
+  const STEP_LABELS = stepLabels(t)
+  const MEASURE_OUTCOMES = measureOutcomes(t)
+
   const measureFetcher = useFetcher<{ outcome: string }>()
   const refreshFetcher = useFetcher()
 
@@ -198,7 +219,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
   const refreshing = refreshFetcher.state !== "idle"
   const measured = measureFetcher.data?.outcome ?? null
 
-  const dateFormat = new Intl.DateTimeFormat("en-GB", {
+  const dateFormat = new Intl.DateTimeFormat(useLocale(), {
     timeZone: timezone,
     day: "numeric",
     month: "short",
@@ -216,7 +237,9 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
               <span className="relative inline-flex h-3 w-3 rounded-full bg-sky-500" />
             </span>
             <p className="font-medium">
-              Watering now: {watering.map((valve) => valve.name).join(", ")}
+              {t("Watering now: {names}", {
+                names: watering.map((valve) => valve.name).join(", "),
+              })}
             </p>
           </div>
         </Card>
@@ -224,11 +247,14 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Card
-          title="Soil"
+          title={t("Soil")}
           description={
             measuredAt == null
-              ? "Sensor reading"
-              : `Measured ${formatAge(measuredAt, now)} · ${dateFormat.format(new Date(measuredAt))}`
+              ? t("Sensor reading")
+              : t("Measured {age} · {date}", {
+                  age: formatAge(measuredAt, now, t) ?? "",
+                  date: dateFormat.format(new Date(measuredAt)),
+                })
           }
           actions={
             <div className="flex items-center gap-1">
@@ -239,9 +265,9 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                     variant="ghost"
                     busy={measuring}
                     className="whitespace-nowrap"
-                    title="Ask the sensor to take a reading now, via Gardena's app API."
+                    title={t("Ask the sensor to take a reading now, via Gardena's app API.")}
                   >
-                    Measure
+                    {t("Measure")}
                   </Button>
                 </measureFetcher.Form>
               )}
@@ -251,9 +277,9 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                 variant="ghost"
                 busy={refreshing}
                 className="whitespace-nowrap"
-                title="Re-read what Gardena already holds. Does not ask the sensor to measure."
+                title={t("Re-read what Gardena already holds. Does not ask the sensor to measure.")}
               >
-                Refresh
+                {t("Refresh")}
               </Button>
               </refreshFetcher.Form>
             </div>
@@ -274,14 +300,14 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 
           {soilHumidity == null ? (
             <p className="text-sm text-stone-500 dark:text-stone-400">
-              No sensor reading yet.
+              {t("No sensor reading yet.")}
             </p>
           ) : (
             <>
               <dl className="grid grid-cols-3 gap-4">
                 <div>
                   <dt className="text-xs text-stone-500 dark:text-stone-400">
-                    Moisture
+                    {t("Moisture")}
                   </dt>
                   <dd className="mt-0.5 text-3xl font-semibold tabular-nums">
                     {soilHumidity}%
@@ -289,7 +315,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                 </div>
                 <div>
                   <dt className="text-xs text-stone-500 dark:text-stone-400">
-                    Soil temp
+                    {t("Soil temp")}
                   </dt>
                   <dd className="mt-0.5 text-3xl font-semibold tabular-nums">
                     {soilTemperature == null ? "—" : `${soilTemperature}°`}
@@ -297,7 +323,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                 </div>
                 <div>
                   <dt className="text-xs text-stone-500 dark:text-stone-400">
-                    Battery
+                    {t("Battery")}
                   </dt>
                   <dd
                     className={cx(
@@ -318,34 +344,48 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 
               {batteryLevel != null && batteryLevel <= 30 && (
                 <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                  {sensorName ?? "The sensor"} is down to {batteryLevel}%
+                  {t("{name} is down to {level}%", {
+                    name: sensorName ?? t("The sensor"),
+                    level: batteryLevel,
+                  })}
                   {batteryMeasuredAt != null &&
-                    ` (as of ${formatAge(batteryMeasuredAt, now)})`}
-                  . A flat sensor stops reporting, and moisture gating then
-                  waters on a stale reading.
+                    t(" (as of {age})", {
+                      age: formatAge(batteryMeasuredAt, now, t) ?? "",
+                    })}
+                  {t(
+                    ". A flat sensor stops reporting, and moisture gating then waters on a stale reading."
+                  )}
                 </p>
               )}
               <p className="mt-3 text-xs text-stone-400 dark:text-stone-500">
-                Gardena decides when the sensor measures; refreshing re-reads
-                what it has already reported.
-                {signalLevel != null && ` Signal ${signalLevel}%.`}
+                {t(
+                  "Gardena decides when the sensor measures; refreshing re-reads what it has already reported."
+                )}
+                {signalLevel != null &&
+                  t(" Signal {level}%.", { level: signalLevel })}
               </p>
               <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
                 {!sensorGateEnabled
-                  ? "Moisture gating is off — schedules run regardless of the reading."
+                  ? t(
+                      "Moisture gating is off — schedules run regardless of the reading."
+                    )
                   : gated.length === 0
-                    ? `Below the ${globalMoistureTarget}% target, so schedules will water.`
-                    : `Currently holding back: ${gated.join(", ")}.`}
+                    ? t("Below the {target}% target, so schedules will water.", {
+                        target: globalMoistureTarget,
+                      })
+                    : t("Currently holding back: {names}.", {
+                        names: gated.join(", "),
+                      })}
               </p>
             </>
           )}
         </Card>
 
-        <Card title="Next run">
+        <Card title={t("Next run")}>
           {upcoming.length === 0 ? (
-            <EmptyState title="Nothing scheduled">
+            <EmptyState title={t("Nothing scheduled")}>
               <Link className="underline" to={href("/schedules")}>
-                Create a schedule
+                {t("Create a schedule")}
               </Link>
             </EmptyState>
           ) : (
@@ -362,8 +402,11 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                       {entry.name}
                     </Link>
                     <p className="text-xs text-stone-500 dark:text-stone-400">
-                      {entry.recurrence} · {entry.stepCount} sprinklers ·{" "}
-                      {entry.totalMinutes} min
+                      {entry.recurrence} ·{" "}
+                      {t("{count} sprinklers · {minutes} min", {
+                        count: entry.stepCount,
+                        minutes: entry.totalMinutes,
+                      })}
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
@@ -381,10 +424,13 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
         </Card>
       </div>
 
-      <Card title="Recent runs" description="What actually happened, and why.">
+      <Card
+        title={t("Recent runs")}
+        description={t("What actually happened, and why.")}
+      >
         {recentRuns.length === 0 ? (
-          <EmptyState title="No runs yet">
-            Runs will appear here once a schedule fires.
+          <EmptyState title={t("No runs yet")}>
+            {t("Runs will appear here once a schedule fires.")}
           </EmptyState>
         ) : (
           <ul className="space-y-5">
@@ -405,7 +451,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                       <span className="truncate">
                         {step.valveName}{" "}
                         <span className="text-stone-500 dark:text-stone-400">
-                          · {step.durationMinutes} min
+                          · {t("{minutes} min", { minutes: step.durationMinutes })}
                         </span>
                       </span>
                       <span className="flex items-center gap-2">
