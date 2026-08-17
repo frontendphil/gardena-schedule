@@ -54,6 +54,8 @@ export const de: Record<string, string> = {
     "Die Feuchtesperre ist aus — Zeitpläne laufen unabhängig vom Messwert.",
   "Below the {target}% target, so schedules will water.":
     "Unter dem Zielwert von {target} %, es wird also bewässert.",
+  "Below every schedule's target, so schedules will water.":
+    "Unter dem Zielwert jedes Zeitplans, es wird also bewässert.",
   "Currently holding back: {names}.": "Aktuell zurückgehalten: {names}.",
   "Gardena decides when the sensor measures; refreshing re-reads what it has already reported.":
     "Gardena entscheidet, wann der Sensor misst; Aktualisieren liest nur erneut, was bereits gemeldet wurde.",
@@ -144,6 +146,14 @@ export const de: Record<string, string> = {
   "Starting from": "Beginnend am",
   "Sets which days the cycle lands on.":
     "Legt fest, auf welche Tage der Rhythmus fällt.",
+  " · waters below {target}%": " · bewässert unter {target} %",
+  "Moisture goal for this schedule": "Feuchte-Ziel für diesen Zeitplan",
+  "Everything in this schedule waters only below this. Leave empty to follow the global target.":
+    "Alles in diesem Zeitplan bewässert nur unterhalb dieses Werts. Leer lassen, um dem globalen Zielwert zu folgen.",
+  "Moisture gating is off in Settings, so this has no effect yet.":
+    "Die Feuchtesperre ist in den Einstellungen aus, dieser Wert hat also noch keine Wirkung.",
+  "{names} keep their own target and ignore this goal. Clear it on the Sprinklers page to bring them in line.":
+    "{names} behalten ihren eigenen Zielwert und ignorieren dieses Ziel. Auf der Sprinkler-Seite löschen, um sie anzugleichen.",
   "Schedule enabled": "Zeitplan aktiv",
   Save: "Speichern",
   Saved: "Gespeichert",
@@ -194,8 +204,11 @@ export const de: Record<string, string> = {
   "A sprinkler is skipped when the sensor reads at or above its target. Checked again for each sprinkler as the schedule runs, so a long run reacts to the soil as it goes.":
     "Ein Sprinkler wird übersprungen, wenn der Sensor seinen Zielwert erreicht oder überschreitet. Wird während des Laufs für jeden Sprinkler erneut geprüft, sodass ein langer Lauf auf den Boden reagiert.",
   "Global moisture target": "Globaler Feuchte-Zielwert",
-  "Water only while the reading is below this.":
-    "Nur bewässern, solange der Messwert darunter liegt.",
+  "Water only while the reading is below this. Schedules and single sprinklers can set their own.":
+    "Nur bewässern, solange der Messwert darunter liegt. Zeitpläne und einzelne Sprinkler können eigene Werte festlegen.",
+  "Schedules with their own goal": "Zeitpläne mit eigenem Ziel",
+  "These win over both the global target and any schedule goal.":
+    "Diese haben Vorrang vor dem globalen Zielwert und vor jedem Zeitplan-Ziel.",
   Sensor: "Sensor",
   "Used for the moisture check.": "Wird für die Feuchteprüfung verwendet.",
   "First available": "Erster verfügbarer",

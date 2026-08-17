@@ -75,18 +75,61 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
       ? null
       : (getDevices().find((device) => device.id === sensor.id) ?? null)
 
+  const enabledSchedules = allSchedules.filter((schedule) => schedule.enabled)
+
+  /**
+   * The targets that apply to one sprinkler — one per enabled schedule holding
+   * it, because a schedule can set its own goal and a sprinkler can appear in
+   * several. A sprinkler in no schedule still gets a target, so the preview can
+   * say something about it.
+   */
+  const targetsFor = (valve: (typeof valveRows)[number]) => {
+    const fromSchedules = enabledSchedules
+      .filter((schedule) =>
+        allSteps.some(
+          (step) => step.scheduleId === schedule.id && step.valveId === valve.id
+        )
+      )
+      .map((schedule) =>
+        resolveMoistureTarget({
+          valve,
+          scheduleTarget: schedule.moistureTarget,
+          globalTarget: settings.globalMoistureTarget,
+        })
+      )
+
+    return fromSchedules.length > 0
+      ? fromSchedules
+      : [
+          resolveMoistureTarget({
+            valve,
+            scheduleTarget: null,
+            globalTarget: settings.globalMoistureTarget,
+          }),
+        ]
+  }
+
   // Which sprinklers the current reading would currently hold back — the gate is
   // re-evaluated at watering time, so this is a preview, not a promise.
+  //
+  // Listed only when the reading clears *every* target that applies to it, so
+  // the claim is true whenever it is shown. A sprinkler in two schedules with
+  // different goals may still water in the drier one, and naming it here would
+  // be wrong.
   const gated = settings.sensorGateEnabled && sensor?.soilHumidity != null
     ? valveRows
         .filter((valve) => !valve.hidden)
-        .filter(
-          (valve) =>
-            sensor.soilHumidity! >=
-            resolveMoistureTarget(valve, settings.globalMoistureTarget)
+        .filter((valve) =>
+          targetsFor(valve).every((target) => sensor.soilHumidity! >= target)
         )
         .map((valve) => displayName(valve))
     : []
+
+  // Whether a single global number still describes the gate, which decides
+  // which of the two "will water" sentences the card can honestly show.
+  const hasScheduleTargets = enabledSchedules.some(
+    (schedule) => schedule.moistureTarget != null
+  )
 
   return {
     // Rendering must not call Date.now(): the server and the browser would
@@ -97,6 +140,7 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
     timezone: settings.timezone,
     sensorGateEnabled: settings.sensorGateEnabled,
     globalMoistureTarget: settings.globalMoistureTarget,
+    hasScheduleTargets,
     soilHumidity: sensor?.soilHumidity ?? null,
     soilTemperature: sensor?.soilTemperature ?? null,
     measuredAt: sensor?.measuredAt ?? null,
@@ -191,6 +235,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
     timezone,
     sensorGateEnabled,
     globalMoistureTarget,
+    hasScheduleTargets,
     soilHumidity,
     soilTemperature,
     measuredAt,
@@ -370,9 +415,11 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                       "Moisture gating is off — schedules run regardless of the reading."
                     )
                   : gated.length === 0
-                    ? t("Below the {target}% target, so schedules will water.", {
-                        target: globalMoistureTarget,
-                      })
+                    ? hasScheduleTargets
+                      ? t("Below every schedule's target, so schedules will water.")
+                      : t("Below the {target}% target, so schedules will water.", {
+                          target: globalMoistureTarget,
+                        })
                     : t("Currently holding back: {names}.", {
                         names: gated.join(", "),
                       })}

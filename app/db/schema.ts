@@ -92,6 +92,15 @@ export const schedules = sqliteTable("schedules", {
    */
   anchorDate: text("anchor_date"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /**
+   * A moisture goal shared by every sprinkler in this schedule, so a schedule
+   * can stand in for an area — shade, lawn, pots — that wants wetter or drier
+   * soil than the rest of the garden.
+   *
+   * Null means "inherit `settings.globalMoistureTarget`". A sprinkler's own
+   * override still wins over this; see `resolveMoistureTarget`.
+   */
+  moistureTarget: integer("moisture_target"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),

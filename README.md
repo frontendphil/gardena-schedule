@@ -44,7 +44,7 @@ process has spent.
 | **Today at a glance** | Every schedule running today on a shared clock, with a warning when two overlap — only one run executes at a time, so the second is skipped rather than queued. |
 | **Sprinklers, not controllers** | The `DEVICE` / `VALVE_SET` layer is never surfaced. A flat alphabetical list you can rename and switch off; order matters only inside a schedule. |
 | **Unused valves** | Gardena reports every port as healthy whether or not anything is wired to it. Switch unused ones off and they never receive a command. Ports still carrying the default `Valve N` name start switched off. |
-| **Moisture gating** | With a soil sensor, a sprinkler is skipped when the reading is at or above its target — global, overridable per sprinkler. Re-checked before every sprinkler. A reading older than the configured age counts as *unknown* and waters, so a sensor that stops reporting cannot silently suppress watering. |
+| **Moisture gating** | With a soil sensor, a sprinkler is skipped when the reading is at or above its target. Three levels, most specific wins: a sprinkler's own target, then the schedule's goal, then the global one — so a schedule can stand in for an area that wants wetter or drier soil. Re-checked before every sprinkler. A reading older than the configured age counts as *unknown* and waters, so a sensor that stops reporting cannot silently suppress watering. |
 | **Forcing a measurement** | Optional. Gardena's public API cannot ask the sensor to measure; its own app API can. Supply a Husqvarna account and the app refreshes a stale reading before the gate decides, and a **Measure** button appears. Undocumented and may change; on failure the run falls back to watering. |
 | **Master switch** | One toggle stops every schedule, closing an open valve immediately. |
 | **Run history** | What watered, what was skipped, and why — including the reading's age. |
@@ -113,7 +113,7 @@ The manifest version is the source of truth — the release workflow reads it fr
 alone does nothing.
 
 1. Bump `version:` in `gardena-scheduler/config.yaml` and commit.
-2. Tag it to match (`git tag v1.8.0`) and push the tag.
+2. Tag it to match (`git tag v1.9.0`) and push the tag.
 3. Add the entry to `gardena-scheduler/CHANGELOG.md` by hand — Home Assistant
    reads that file and never sees GitHub Releases.
 4. `release.yml` builds `aarch64` and `amd64` on native runners — emulating arm64

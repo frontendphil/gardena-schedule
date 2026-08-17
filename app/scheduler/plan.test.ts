@@ -32,6 +32,7 @@ const schedule = (overrides: Partial<Schedule> = {}): Schedule => ({
   intervalDays: 2,
   anchorDate: null,
   enabled: true,
+  moistureTarget: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
   ...overrides,
 })
@@ -378,11 +379,51 @@ describe("byDisplayName", () => {
 })
 
 describe("moisture gate", () => {
-  it("falls back to the global target and lets a valve override it", () => {
-    expect(resolveMoistureTarget(valve("a:1"), 20)).toBe(20)
+  it("resolves the target most-specific-first: sprinkler, schedule, global", () => {
+    const global = { scheduleTarget: null, globalTarget: 20 }
+
+    // Nothing set anywhere.
+    expect(resolveMoistureTarget({ valve: valve("a:1"), ...global })).toBe(20)
+
+    // A sprinkler's own target beats the global one.
     expect(
-      resolveMoistureTarget(valve("a:1", { moistureTarget: 30 }), 20)
+      resolveMoistureTarget({
+        valve: valve("a:1", { moistureTarget: 30 }),
+        ...global,
+      })
     ).toBe(30)
+
+    // A schedule goal beats the global one for a sprinkler with no target…
+    expect(
+      resolveMoistureTarget({
+        valve: valve("a:1"),
+        scheduleTarget: 40,
+        globalTarget: 20,
+      })
+    ).toBe(40)
+
+    // …but loses to a sprinkler that has one. This is the case that surprises,
+    // so the schedule editor names these sprinklers rather than letting the
+    // goal silently not apply.
+    expect(
+      resolveMoistureTarget({
+        valve: valve("a:1", { moistureTarget: 30 }),
+        scheduleTarget: 40,
+        globalTarget: 20,
+      })
+    ).toBe(30)
+  })
+
+  it("treats a schedule goal of 0 as a real goal, not as unset", () => {
+    // 0 means "always water"; `??` keeps it distinct from null, which `||`
+    // would not.
+    expect(
+      resolveMoistureTarget({
+        valve: valve("a:1"),
+        scheduleTarget: 0,
+        globalTarget: 20,
+      })
+    ).toBe(0)
   })
 
   const gate = (
@@ -392,6 +433,7 @@ describe("moisture gate", () => {
   ) =>
     decideMoisture({
       valve: { moistureTarget },
+      scheduleTarget: null,
       globalTarget: 20,
       sensorGateEnabled: true,
       reading,
@@ -409,6 +451,17 @@ describe("moisture gate", () => {
     // Raising this valve's target to 30 makes it water at a reading of 20.
     expect(gate(30, 20).skip).toBe(false)
     expect(gate(30, 30).skip).toBe(true)
+  })
+
+  it("gates on the schedule's goal when the sprinkler has none", () => {
+    // Reading 30 is at or above the global target of 20, so it would normally
+    // skip — a wetter schedule goal makes the same reading water.
+    expect(gate(null, 30).skip).toBe(true)
+    expect(gate(null, 30, { scheduleTarget: 40 }).skip).toBe(false)
+    expect(gate(null, 40, { scheduleTarget: 40 }).skip).toBe(true)
+
+    // And a sprinkler with its own target ignores the schedule goal entirely.
+    expect(gate(20, 30, { scheduleTarget: 40 }).skip).toBe(true)
   })
 
   it("waters when the reading is older than the allowed age", () => {
@@ -443,6 +496,7 @@ describe("moisture gate", () => {
     expect(
       shouldSkipForMoisture({
         valve: { moistureTarget: null },
+        scheduleTarget: null,
         globalTarget: 20,
         sensorGateEnabled: false,
         reading: 90,
@@ -454,6 +508,7 @@ describe("moisture gate", () => {
     expect(
       shouldSkipForMoisture({
         valve: { moistureTarget: null },
+        scheduleTarget: null,
         globalTarget: 20,
         sensorGateEnabled: true,
         reading: null,

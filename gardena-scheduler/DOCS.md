@@ -83,9 +83,20 @@ off — that guess only sets the toggle's initial position and you can override 
 ### Moisture
 
 With a GARDENA smart Sensor you can skip watering when the soil is already wet
-enough. Set a global target, and override it for individual sprinklers — global
-20%, but 30% for the hedge. The check runs again before **each** sprinkler, so a
-long schedule reacts to the soil as it goes.
+enough. There are three places to set a target, and the most specific one wins:
+
+1. **A single sprinkler**, on the Sprinklers page.
+2. **A whole schedule**, in the schedule editor — useful when a schedule covers
+   one area, like a shaded bed that should stay wetter than the lawn.
+3. **The global target**, on the Settings page, used when neither is set.
+
+So a global 20% with a 35% goal on your "Shade" schedule waters everything in
+that schedule until the soil reaches 35% — except a sprinkler you have given its
+own number, which keeps it. The schedule editor names those sprinklers, so a
+goal that does not apply everywhere says so.
+
+The check runs again before **each** sprinkler, so a long schedule reacts to the
+soil as it goes.
 
 The dashboard shows the reading's age and the sensor's battery, and warns below
 30%. A flat sensor stops reporting, and the gate would then decide on a stale

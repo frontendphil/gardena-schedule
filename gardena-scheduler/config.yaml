@@ -5,7 +5,7 @@
 # building on the device, so installing on a Raspberry-Pi-class box is a download
 # instead of a multi-minute build.
 name: Gardena Scheduler
-version: "1.8.0"
+version: "1.9.0"
 slug: gardena_scheduler
 description: Scheduling for a GARDENA smart irrigation system
 url: https://github.com/frontendphil/gardena-schedule
