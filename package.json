@@ -10,7 +10,8 @@
     "typecheck": "react-router typegen && tsc",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "i18n:check": "node scripts/check-i18n.mjs"
+    "i18n:check": "node scripts/check-i18n.mjs",
+    "ingress:check": "react-router build && node scripts/check-ingress.mjs"
   },
   "dependencies": {
     "@react-router/express": "7.18.2",
@@ -42,6 +43,6 @@
     "vitest": "4.1.10"
   },
   "engines": {
-    "node": "v26.7.0"
+    "node": ">=24.0.0"
   }
 }
