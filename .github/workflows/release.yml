@@ -130,7 +130,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 
-  tag:
+  release:
     needs: [check, publish]
     # Redundant with the skip that a skipped `publish` already propagates, but
     # stated anyway: "the tag only exists if the images do" is the guarantee
@@ -142,21 +142,49 @@ jobs:
       contents: write
 
     steps:
-      - name: Tag the released commit
+      - uses: actions/checkout@v7.0.1
+
+      - name: Tag the commit and publish a GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.check.outputs.version }}
         run: |
-          # `republish` reaches here with the tag already present, which is not
-          # an error — the images were rebuilt for a tag that already points at
-          # this commit.
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
-            echo "::notice::v$VERSION already tagged; images were republished."
+          # This version's section of the changelog: everything between its own
+          # heading and the next one. Home Assistant reads CHANGELOG.md directly,
+          # so the release notes are a mirror of it rather than a second place to
+          # write the same thing.
+          awk -v want="## $VERSION" '
+            $0 == want { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' gardena-scheduler/CHANGELOG.md > notes.md
+
+          changelog="https://github.com/$GITHUB_REPOSITORY/blob/v$VERSION/gardena-scheduler/CHANGELOG.md"
+
+          if grep -q '[^[:space:]]' notes.md; then
+            printf '\n[Full changelog](%s)\n' "$changelog" >> notes.md
+          else
+            # Deliberately not a failure. The images are already published by
+            # this point, and stopping here would leave them untagged — the
+            # exact broken state this workflow exists to prevent. A missing
+            # entry is worth a warning, not a wedged release.
+            echo "::warning::No '## $VERSION' section in gardena-scheduler/CHANGELOG.md — releasing with a link instead."
+            printf 'See the [changelog](%s).\n' "$changelog" > notes.md
+          fi
+
+          # `republish` reaches here with the release already present, which is
+          # not an error: the images were rebuilt for a version already out.
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release edit "v$VERSION" --notes-file notes.md
+            echo "::notice::v$VERSION already released; refreshed its notes."
             exit 0
           fi
 
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f ref="refs/tags/v$VERSION" \
-            -f sha="$GITHUB_SHA" >/dev/null
+          # Creates the tag and the release in one call, so the tag cannot exist
+          # without the notes that explain it.
+          gh release create "v$VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --notes-file notes.md
 
-          echo "::notice::Tagged v$VERSION at $GITHUB_SHA"
+          echo "::notice::Released v$VERSION at $GITHUB_SHA"

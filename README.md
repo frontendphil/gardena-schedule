@@ -117,7 +117,11 @@ The manifest version is the source of truth, and releasing is automatic:
 On every push to main, `release.yml` compares `config.yaml` against the tags on
 the remote. If that version is already tagged it stops; otherwise it builds
 `aarch64` and `amd64` on native runners — emulating arm64 crashes V8 under QEMU
-— pushes both to GHCR, and only then creates `v{version}`.
+— pushes both to GHCR, and only then creates `v{version}` together with a GitHub
+release. The release notes are that version's section of `CHANGELOG.md`, lifted
+verbatim, plus a link to the full file — so the changelog stays the one place
+the notes are written. A version with no matching section still releases, with
+just the link and a warning in the run.
 
 **The order is deliberate.** Home Assistant reads `config.yaml` from the default
 branch and appends `:{version}` to the image name, so it offers an update the
