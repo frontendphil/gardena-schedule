@@ -1,8 +1,9 @@
 # Changelog
 
 Home Assistant shows this file on the add-on's page and when an update is
-available. Entries are added automatically from GitHub release notes — see
-"Publishing a new version" in the repository README.
+available, and it never sees GitHub Releases — so an entry added here by hand is
+the only thing that tells you what changed. See "Releasing" in the repository
+README.
 
 ## 1.8.0
 
