@@ -27,6 +27,13 @@ jobs:
       # German user just silently sees English. Nothing else would catch it.
       - run: pnpm i18n:check
 
+      # Ingress is the one part of the app with no type safety: the path prefix
+      # is a runtime string from a header, and every failure mode looks like
+      # "the page renders but navigation does nothing". Runs against the build
+      # above rather than `pnpm ingress:check`, which would build a second time.
+      - name: Check Home Assistant Ingress path handling
+        run: node scripts/check-ingress.mjs
+
       # The add-on manifest is only correct if it stays in step with the code,
       # and a mismatch here is invisible until an install fails.
       - name: Check add-on manifest

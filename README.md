@@ -92,12 +92,18 @@ pnpm test               # pure planner tests: timezones and DST, recurrence,
                         # parallel grouping, the moisture gate
 pnpm typecheck
 pnpm i18n:check         # German dictionary vs. the strings the UI uses
+pnpm ingress:check      # builds, then exercises the Ingress path handling
 pnpm db:generate        # after editing app/db/schema.ts
 ```
 
-CI runs all of these. `i18n:check` exists because translation drift is otherwise
-invisible: editing an English label orphans its translation, and that string
-silently reverts to English while everything still builds.
+CI runs all of these. The two custom checks exist because both failures are
+silent: translation drift orphans a string that then quietly renders in English,
+and a broken Ingress prefix renders a perfectly normal page whose links do
+nothing. Neither breaks a build, and both were previously found by hand after a
+release.
+
+React Router's v8 future flags are all enabled in `react-router.config.ts`, so
+the upgrade itself is a version bump rather than a behaviour change.
 
 ## Releasing
 
