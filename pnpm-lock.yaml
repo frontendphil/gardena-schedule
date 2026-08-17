@@ -39,8 +39,8 @@ importers:
         specifier: 7.9.3
         version: 7.9.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       zod:
-        specifier: 4.1.11
-        version: 4.1.11
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@react-router/dev':
         specifier: 7.9.3
@@ -2299,8 +2299,8 @@ packages:
     resolution: {integrity: sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==}
     engines: {node: '>=18'}
 
-  zod@4.1.11:
-    resolution: {integrity: sha512-WPsqwxITS2tzx1bzhIKsEs19ABD5vmCVa4xBo2tq/SrV4RNZtfws1EnCWQXM6yh8bD08a1idvkB5MZSBiZsjwg==}
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
 
@@ -4342,4 +4342,4 @@ snapshots:
 
   yallist@5.0.0: {}
 
-  zod@4.1.11: {}
+  zod@4.4.3: {}
