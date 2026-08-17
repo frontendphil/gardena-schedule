@@ -99,6 +99,13 @@ network.
 
 ## Development
 
+> [!CAUTION]
+> A development copy talks to the **same Gardena account** as the deployed
+> add-on, so a schedule left enabled in a local database will water a real
+> garden — at the wrong time, in the wrong order, and with nothing in the add-on's
+> run history to explain it. Put `SCHEDULER_DISABLED=1` in your local `.env`.
+> The instance in charge of the garden is the only one that should run without it.
+
 ```bash
 pnpm test        # planner unit tests (timezone, DST, recurrence, moisture gate,
                  # parallel grouping and the per-controller valve limit)

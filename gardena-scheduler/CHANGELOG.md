@@ -4,6 +4,14 @@ Home Assistant shows this file on the add-on's page and when an update is
 available. Entries are added automatically from GitHub release notes — see
 "Publishing a new version" in the repository README.
 
+## 1.7.2
+
+- Added `SCHEDULER_DISABLED`, a hard stop for any instance that must never open a
+  valve. A development copy points at the same Gardena account as the add-on, so
+  a schedule left enabled locally waters a real garden while the add-on's own
+  history shows nothing. When set, the scheduler does not start and the UI says
+  so.
+
 ## 1.7.1
 
 - Fixed **Measure**, **Refresh** and the **All schedules** switch returning a 404

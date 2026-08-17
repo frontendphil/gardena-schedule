@@ -19,6 +19,18 @@ import { buildPlan, decideMoisture, displayName, isDue } from "./plan"
 const TICK_MS = 30_000
 
 /**
+ * Hard stop for instances that must never open a valve.
+ *
+ * A development copy points at the same Gardena account as the real one, so a
+ * schedule left enabled in a local database waters a real garden — at the wrong
+ * time, in the wrong order, and with nothing in the deployed add-on's history to
+ * explain it. Set `SCHEDULER_DISABLED=1` in any instance that is not the one in
+ * charge of the garden.
+ */
+export const schedulerDisabled = () =>
+  (process.env.SCHEDULER_DISABLED ?? "") !== ""
+
+/**
  * Watering a valve for N minutes takes N minutes, so the run executor is a
  * long-lived async task rather than something the tick completes. Only one run is
  * ever active — valves share water pressure and must not overlap.
@@ -320,6 +332,7 @@ const hasRunOn = (scheduleId: number, scheduledDate: string) =>
  * every 30 seconds costs nothing against the monthly request budget.
  */
 export const tick = async (now = new Date()) => {
+  if (schedulerDisabled()) return
   if (active != null) return
 
   const settings = getSettings()
@@ -424,6 +437,13 @@ export const reconcileInterruptedRuns = () => {
 
 export const startScheduler = () => {
   if (running) return
+
+  if (schedulerDisabled()) {
+    console.warn(
+      "[scheduler] SCHEDULER_DISABLED is set — this instance will not run schedules or open any valve."
+    )
+    return
+  }
 
   running = true
   reconcileInterruptedRuns()

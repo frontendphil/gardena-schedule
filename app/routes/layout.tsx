@@ -13,7 +13,7 @@ import { Badge, Toggle, cx } from "../components/ui"
 import { db } from "../db"
 import { settings as settingsTable } from "../db/schema"
 import { getConnectionState } from "../gardena/store"
-import { getActiveRun } from "../scheduler/runner"
+import { getActiveRun, schedulerDisabled } from "../scheduler/runner"
 import type { Route } from "./+types/layout"
 import { requirePage } from "./guard"
 
@@ -36,6 +36,7 @@ export const loader = async () => {
     masterEnabled: settings.masterEnabled,
     connected: connection.connected,
     activeRun: getActiveRun(),
+    schedulerOff: schedulerDisabled(),
   }
 }
 
@@ -47,7 +48,7 @@ const NAV = [
 ]
 
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
-  const { masterEnabled, connected, activeRun } = loaderData
+  const { masterEnabled, connected, activeRun, schedulerOff } = loaderData
   const location = useLocation()
   const revalidator = useRevalidator()
   // A fetcher keeps the switch on whatever page it was pressed from; a
@@ -134,6 +135,15 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
           />
         </masterFetcher.Form>
       </header>
+
+      {schedulerOff && (
+        <p className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          <strong>Scheduler disabled on this instance.</strong> It will not run
+          schedules or open any valve — <code>SCHEDULER_DISABLED</code> is set.
+          Only the instance actually in charge of the garden should run without
+          it.
+        </p>
+      )}
 
       {!masterEnabled && (
         <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
