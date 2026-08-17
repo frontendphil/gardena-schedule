@@ -23,6 +23,10 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+      # Translation drift never breaks the build and never shows an error — a
+      # German user just silently sees English. Nothing else would catch it.
+      - run: pnpm i18n:check
+
       # The add-on manifest is only correct if it stays in step with the code,
       # and a mismatch here is invisible until an install fails.
       - name: Check add-on manifest
@@ -34,6 +38,40 @@ jobs:
             test -f "gardena-scheduler/$f" || { echo "gardena-scheduler/$f missing"; exit 1; }
           done
           echo "add-on version $version"
+
+      # Home Assistant renders the Configuration tab from these files. A key that
+      # does not match the schema shows the raw option name instead of a label,
+      # and only ever in the language nobody on the project is reading.
+      - name: Check add-on option translations
+        run: |
+          # Don't assume the runner image ships PyYAML — a missing import here
+          # would look like a translation failure rather than a setup one.
+          python3 -c "import yaml" 2>/dev/null || pip install --quiet pyyaml
+
+          python3 - <<'PY'
+          import sys, glob, os
+          import yaml
+
+          schema = set(yaml.safe_load(open("gardena-scheduler/config.yaml"))["schema"])
+          failed = False
+
+          for path in sorted(glob.glob("gardena-scheduler/translations/*.yaml")):
+              data = yaml.safe_load(open(path)) or {}
+              keys = set((data.get("configuration") or {}).keys())
+              lang = os.path.basename(path)
+
+              for key in sorted(schema - keys):
+                  print(f"{lang}: missing translation for option '{key}'")
+                  failed = True
+              for key in sorted(keys - schema):
+                  print(f"{lang}: translates '{key}', which is not in the schema")
+                  failed = True
+
+              if not (schema - keys) and not (keys - schema):
+                  print(f"{lang}: all {len(schema)} options translated")
+
+          sys.exit(1 if failed else 0)
+          PY
 
       # Migrations ship in the image and run at boot; a schema change without a
       # generated migration would fail on someone else's data, not ours.

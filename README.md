@@ -72,6 +72,7 @@ shows the live request count for the running process.
 | **Per-sprinkler targets** | Any sprinkler can override the global moisture target — global 20%, but 30% for the hedge. |
 | **Run history** | Every run records what watered, what was skipped and why. |
 | **Several locations** | Every location on the account is connected, with one WebSocket each. Sprinklers are labelled by location when there is more than one, so two "Terrace" valves stay tellable apart. |
+| **English and German** | The interface follows the browser's language, overridable in Settings. Home Assistant translates the add-on's configuration options separately, from `gardena-scheduler/translations/`. Run `pnpm i18n:check` to find strings with no German, or German with no string. |
 | **Sensor health** | The dashboard shows soil moisture, soil temperature, sensor battery and how old the reading is, and warns below 30% battery — a flat sensor stops reporting and moisture gating would then water on a stale reading. |
 
 ### Recurrence
@@ -110,8 +111,15 @@ network.
 pnpm test        # planner unit tests (timezone, DST, recurrence, moisture gate,
                  # parallel grouping and the per-controller valve limit)
 pnpm typecheck
+pnpm i18n:check  # German dictionary vs. the strings the UI actually uses
 pnpm db:generate # regenerate migrations after editing app/db/schema.ts
 ```
+
+CI runs all of these. `i18n:check` is there because translation drift is
+invisible otherwise: editing an English label orphans its translation, and that
+string silently reverts to English for German users while everything still
+builds and renders. It fails on both directions — a string with no German, and
+German nobody asks for any more.
 
 ## Deployment
 

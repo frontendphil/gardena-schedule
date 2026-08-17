@@ -10,6 +10,7 @@ import {
 } from "react-router"
 
 import { Badge, Toggle, cx } from "../components/ui"
+import { LanguageProvider, createTranslate, resolveLanguage } from "../i18n"
 import { db } from "../db"
 import { settings as settingsTable } from "../db/schema"
 import { getConnectionState } from "../gardena/store"
@@ -28,11 +29,17 @@ export const middleware: Route.MiddlewareFunction[] = [
   },
 ]
 
-export const loader = async () => {
+export const loader = async ({ request }: Route.LoaderArgs) => {
   const settings = db.select().from(settingsTable).get()!
   const connection = getConnectionState()
 
   return {
+    // Resolved on the server and passed down, so the client hydrates with the
+    // same language rather than re-deciding and mismatching the markup.
+    language: resolveLanguage(
+      settings.language,
+      request.headers.get("Accept-Language")
+    ),
     masterEnabled: settings.masterEnabled,
     connected: connection.connected,
     activeRun: getActiveRun(),
@@ -48,7 +55,9 @@ const NAV = [
 ]
 
 export default function AppLayout({ loaderData }: Route.ComponentProps) {
-  const { masterEnabled, connected, activeRun, schedulerOff } = loaderData
+  const { masterEnabled, connected, activeRun, schedulerOff, language } =
+    loaderData
+  const t = createTranslate(language)
   const location = useLocation()
   const revalidator = useRevalidator()
   // A fetcher keeps the switch on whatever page it was pressed from; a
@@ -92,13 +101,14 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
   }, [revalidator])
 
   return (
+    <LanguageProvider value={language}>
     <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-6 p-4 sm:p-6">
       {/* Every navigation and form post is covered by this, so no action can
           look like it did nothing while the server works. */}
       {busy && (
         <div
           role="progressbar"
-          aria-label="Working"
+          aria-label={t("Working")}
           className="fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden bg-emerald-600/20"
         >
           <div className="h-full w-1/3 animate-[tl-progress_1.1s_ease-in-out_infinite] bg-emerald-600" />
@@ -108,15 +118,17 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold tracking-tight">
-            Gardena Scheduler
+            {t("Gardena Scheduler")}
           </h1>
           {connected ? (
-            <Badge tone="good">Connected</Badge>
+            <Badge tone="good">{t("Connected")}</Badge>
           ) : (
-            <Badge tone="bad">Offline</Badge>
+            <Badge tone="bad">{t("Offline")}</Badge>
           )}
           {activeRun != null && (
-            <Badge tone="active">Watering · {activeRun.scheduleName}</Badge>
+            <Badge tone="active">
+              {t("Watering · {name}", { name: activeRun.scheduleName })}
+            </Badge>
           )}
         </div>
 
@@ -125,7 +137,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
           action={href("/master")}
           className="flex items-center gap-3"
         >
-          <span className="text-sm font-medium">All schedules</span>
+          <span className="text-sm font-medium">{t("All schedules")}</span>
           <Toggle
             name="enabled"
             checked={masterEnabled}
@@ -138,17 +150,19 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
 
       {schedulerOff && (
         <p className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-          <strong>Scheduler disabled on this instance.</strong> It will not run
-          schedules or open any valve — <code>SCHEDULER_DISABLED</code> is set.
-          Only the instance actually in charge of the garden should run without
-          it.
+          <strong>{t("Scheduler disabled on this instance.")}</strong>{" "}
+          {t(
+            "It will not run schedules or open any valve — {flag} is set. Only the instance actually in charge of the garden should run without it.",
+            { flag: "SCHEDULER_DISABLED" }
+          )}
         </p>
       )}
 
       {!masterEnabled && (
         <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          All schedules are switched off. Nothing will be watered until you turn
-          them back on.
+          {t(
+            "All schedules are switched off. Nothing will be watered until you turn them back on."
+          )}
         </p>
       )}
 
@@ -167,7 +181,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
               )
             }
           >
-            {label}
+            {t(label)}
           </NavLink>
         ))}
       </nav>
@@ -176,5 +190,6 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         <Outlet />
       </main>
     </div>
+    </LanguageProvider>
   )
 }

@@ -1,0 +1,25 @@
+configuration:
+  gardena_application_key:
+    name: Anwendungsschlüssel
+    description: >-
+      Aus dem Husqvarna-Entwicklerportal. Lege eine Anwendung an und verbinde die
+      „GARDENA smart system API“ damit.
+  gardena_application_secret:
+    name: Anwendungs-Geheimnis
+    description: Das Geheimnis, das zu dieser Anwendung gehört.
+  gardena_email:
+    name: E-Mail des Husqvarna-Kontos (optional)
+    description: >-
+      Nur nötig, um den Bodensensor auf Anforderung messen zu lassen — die
+      öffentliche API hat dafür keinen Befehl. Bleibt das Feld leer, gilt ein
+      veralteter Messwert als unbekannt und der Sprinkler bewässert.
+  gardena_password:
+    name: Passwort des Husqvarna-Kontos (optional)
+    description: >-
+      Wird zusammen mit der E-Mail oben verwendet. Läuft über Gardenas eigene
+      App-API, die undokumentiert ist und sich ändern kann.
+
+network:
+  3000/tcp: >-
+    Direkter Zugriff, der die Home-Assistant-Anmeldung umgeht. Nur setzen, wenn
+    du ihn brauchst — über die Seitenleiste ist das Add-on auch ohne erreichbar.

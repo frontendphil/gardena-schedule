@@ -1,0 +1,25 @@
+configuration:
+  gardena_application_key:
+    name: Application key
+    description: >-
+      From the Husqvarna developer portal. Create an application and connect the
+      "GARDENA smart system API" to it.
+  gardena_application_secret:
+    name: Application secret
+    description: The secret belonging to that application.
+  gardena_email:
+    name: Husqvarna account email (optional)
+    description: >-
+      Only needed to make the soil sensor measure on demand — the public API has
+      no command for that. Leave empty and an out-of-date reading simply counts
+      as unknown, and the sprinkler waters.
+  gardena_password:
+    name: Husqvarna account password (optional)
+    description: >-
+      Used with the email above. This goes through Gardena's own app API, which
+      is undocumented and may change.
+
+network:
+  3000/tcp: >-
+    Direct access, bypassing Home Assistant login. Leave unset unless you need
+    it — the add-on is reachable through the sidebar without it.

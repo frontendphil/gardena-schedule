@@ -4,6 +4,13 @@ Home Assistant shows this file on the add-on's page and when an update is
 available. Entries are added automatically from GitHub release notes — see
 "Publishing a new version" in the repository README.
 
+## 1.8.0
+
+- The interface is now available in **German** as well as English. It follows
+  your browser by default, and Settings has a language picker if you want to
+  fix it. Dates and times follow the language too.
+- The add-on's own configuration options are translated in Home Assistant.
+
 ## 1.7.2
 
 - Added `SCHEDULER_DISABLED`, a hard stop for any instance that must never open a

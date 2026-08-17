@@ -27,6 +27,11 @@ export const settings = sqliteTable("settings", {
    */
   maxReadingAgeMinutes: integer("max_reading_age_minutes").notNull().default(180),
   timezone: text("timezone").notNull().default("Europe/Berlin"),
+  /**
+   * UI language. `auto` follows the browser, because Home Assistant does not
+   * tell an Ingress add-on which language the user picked.
+   */
+  language: text("language").notNull().default("auto"),
 })
 
 /**

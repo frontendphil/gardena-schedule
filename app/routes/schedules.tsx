@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm"
 import { Form, Link, href, redirect, useSubmit } from "react-router"
 
 import { Badge, Button, Card, EmptyState, Input, Toggle } from "../components/ui"
+import { useT } from "../i18n"
+import { translatorFor } from "../i18n/server"
 import { db } from "../db"
 import {
   scheduleSteps as scheduleStepsTable,
@@ -25,7 +27,8 @@ import {
 } from "../scheduler/time"
 import type { Route } from "./+types/schedules"
 
-export const loader = async () => {
+export const loader = async ({ request }: Route.LoaderArgs) => {
+  const t = translatorFor(request)
   const settings = db.select().from(settingsTable).get()!
   const now = new Date()
 
@@ -55,7 +58,7 @@ export const loader = async () => {
         name: schedule.name,
         startTime: schedule.startTime,
         enabled: schedule.enabled,
-        recurrence: formatRecurrence(schedule),
+        recurrence: formatRecurrence(schedule, t),
         stepCount: plan.steps.length,
         totalMinutes: plan.totalMinutes,
         endTime: formatZonedTime(plan.endsAt, settings.timezone),
@@ -167,6 +170,7 @@ export const loader = async () => {
 }
 
 export const action = async ({ request }: Route.ActionArgs) => {
+  const t = translatorFor(request)
   const formData = await request.formData()
   const intent = formData.get("intent")
 
@@ -184,7 +188,7 @@ export const action = async ({ request }: Route.ActionArgs) => {
   if (intent === "create") {
     const name = String(formData.get("name") ?? "").trim()
 
-    if (name === "") return { error: "Give the schedule a name." }
+    if (name === "") return { error: t("Give the schedule a name.") }
 
     const created = db
       .insert(schedulesTable)
@@ -203,20 +207,21 @@ export const action = async ({ request }: Route.ActionArgs) => {
 export default function Schedules({ loaderData, actionData }: Route.ComponentProps) {
   const { schedules, timeline, conflicts } = loaderData
   const submit = useSubmit()
+  const t = useT()
 
   return (
     <>
       <Card
-        title="Today"
+        title={t("Today")}
         description={
           timeline == null
             ? undefined
-            : "Every schedule running today, on a shared clock."
+            : t("Every schedule running today, on a shared clock.")
         }
       >
         {timeline == null ? (
-          <EmptyState title="Nothing runs today">
-            No enabled schedule covers today, or none has sprinklers yet.
+          <EmptyState title={t("Nothing runs today")}>
+            {t("No enabled schedule covers today, or none has sprinklers yet.")}
           </EmptyState>
         ) : (
           <>
@@ -224,10 +229,10 @@ export default function Schedules({ loaderData, actionData }: Route.ComponentPro
 
             {conflicts.length > 0 && (
               <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                <strong>{conflicts.join(" and ")}</strong> overlap. Only one
-                schedule runs at a time, so whichever comes second will be
-                skipped today rather than waiting its turn. Move its start time
-                past the end of the first.
+                {t(
+                  "{names} overlap. Only one schedule runs at a time, so whichever comes second will be skipped today rather than waiting its turn. Move its start time past the end of the first.",
+                  { names: conflicts.join(" & ") }
+                )}
               </p>
             )}
           </>
@@ -235,12 +240,14 @@ export default function Schedules({ loaderData, actionData }: Route.ComponentPro
       </Card>
 
       <Card
-        title="Schedules"
-        description="Each schedule waters its sprinklers one after another, starting at its start time."
+        title={t("Schedules")}
+        description={t(
+          "Each schedule waters its sprinklers one after another, starting at its start time."
+        )}
       >
         {schedules.length === 0 ? (
-          <EmptyState title="No schedules yet">
-            Create one below to get started.
+          <EmptyState title={t("No schedules yet")}>
+            {t("Create one below to get started.")}
           </EmptyState>
         ) : (
           <ul className="divide-y divide-stone-100 dark:divide-stone-800">
@@ -263,13 +270,16 @@ export default function Schedules({ loaderData, actionData }: Route.ComponentPro
                   </p>
                   <p className="text-xs text-stone-500 dark:text-stone-400">
                     {schedule.stepCount === 0
-                      ? "No sprinklers yet"
-                      : `${schedule.stepCount} sprinklers · ${schedule.totalMinutes} min total`}
+                      ? t("No sprinklers yet")
+                      : t("{count} sprinklers · {minutes} min total", {
+                          count: schedule.stepCount,
+                          minutes: schedule.totalMinutes,
+                        })}
                   </p>
                 </div>
 
                 <div className="flex shrink-0 items-center gap-3">
-                  {!schedule.enabled && <Badge>Off</Badge>}
+                  {!schedule.enabled && <Badge>{t("Off")}</Badge>}
                   <Form method="post">
                     <input type="hidden" name="intent" value="toggle" />
                     <input
@@ -290,11 +300,11 @@ export default function Schedules({ loaderData, actionData }: Route.ComponentPro
         )}
       </Card>
 
-      <Card title="New schedule">
+      <Card title={t("New schedule")}>
         <Form method="post" className="flex flex-wrap items-start gap-3">
           <input type="hidden" name="intent" value="create" />
           <div className="min-w-48 flex-1">
-            <Input name="name" placeholder="Evening watering" required />
+            <Input name="name" placeholder={t("Evening watering")} required />
             {actionData?.error != null && (
               <p className="mt-1 text-sm text-red-600 dark:text-red-400">
                 {actionData.error}
@@ -302,7 +312,7 @@ export default function Schedules({ loaderData, actionData }: Route.ComponentPro
             )}
           </div>
           <Button type="submit" variant="primary">
-            Create
+            {t("Create")}
           </Button>
         </Form>
       </Card>

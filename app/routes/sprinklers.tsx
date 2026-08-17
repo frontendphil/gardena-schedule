@@ -11,6 +11,7 @@ import {
   Toggle,
   usePendingForm,
 } from "../components/ui"
+import { useT, type Translate } from "../i18n"
 import { db } from "../db"
 import {
   locations as locationsTable,
@@ -107,14 +108,18 @@ type Sprinkler = Route.ComponentProps["loaderData"]["inUse"][number]
 const DisableToggle = ({
   valve,
   onToggle,
+  t,
 }: {
   valve: Sprinkler
   onToggle: (form: HTMLFormElement) => void
+  t: Translate
 }) => (
   <Form method="post" className="flex items-center gap-2">
     <input type="hidden" name="intent" value="toggle-hidden" />
     <input type="hidden" name="valveId" value={valve.id} />
-    <span className="text-sm text-stone-500 dark:text-stone-400">In use</span>
+    <span className="text-sm text-stone-500 dark:text-stone-400">
+      {t("In use")}
+    </span>
     <Toggle
       name="visible"
       checked={!valve.hidden}
@@ -130,6 +135,7 @@ export default function Sprinklers({
 }: Route.ComponentProps) {
   const { inUse, disabled, globalMoistureTarget } = loaderData
   const submit = useSubmit()
+  const t = useT()
   const pending = usePendingForm()
   const onToggle = (form: HTMLFormElement) => submit(form)
 
@@ -142,14 +148,16 @@ export default function Sprinklers({
   return (
     <>
       <Card
-        title="Sprinklers"
-        description="Rename and set a moisture target that differs from the global one. Listed alphabetically; order only matters inside a schedule."
+        title={t("Sprinklers")}
+        description={t(
+          "Rename and set a moisture target that differs from the global one. Listed alphabetically; order only matters inside a schedule."
+        )}
       >
         {inUse.length === 0 ? (
-          <EmptyState title="No sprinklers in use">
+          <EmptyState title={t("No sprinklers in use")}>
             {disabled.length > 0
-              ? "Every valve is switched off below."
-              : "They appear automatically once the Gardena connection is up."}
+              ? t("Every valve is switched off below.")
+              : t("They appear automatically once the Gardena connection is up.")}
           </EmptyState>
         ) : (
           <ul className="space-y-3">
@@ -164,14 +172,14 @@ export default function Sprinklers({
                     {valve.location != null && (
                       <Badge tone="neutral">{valve.location}</Badge>
                     )}
-                    {valve.watering && <Badge tone="active">Watering</Badge>}
-                    {!valve.known && <Badge tone="neutral">Not reported</Badge>}
+                    {valve.watering && <Badge tone="active">{t("Watering")}</Badge>}
+                    {!valve.known && <Badge tone="neutral">{t("Not reported")}</Badge>}
                     {valve.known && !valve.connected && (
-                      <Badge tone="bad">Unreachable</Badge>
+                      <Badge tone="bad">{t("Unreachable")}</Badge>
                     )}
                   </div>
 
-                  <DisableToggle valve={valve} onToggle={onToggle} />
+                  <DisableToggle valve={valve} onToggle={onToggle} t={t} />
                 </div>
 
                 <Form
@@ -183,7 +191,7 @@ export default function Sprinklers({
 
                   <label className="min-w-48 flex-1">
                     <span className="text-xs text-stone-500 dark:text-stone-400">
-                      Name in Gardena: {valve.apiName}
+                      {t("Name in Gardena: {name}", { name: valve.apiName })}
                     </span>
                     <Input
                       name="displayName"
@@ -196,7 +204,7 @@ export default function Sprinklers({
 
                   <label className="w-44">
                     <span className="text-xs text-stone-500 dark:text-stone-400">
-                      Moisture target
+                      {t("Moisture target")}
                     </span>
                     <Input
                       type="number"
@@ -204,7 +212,7 @@ export default function Sprinklers({
                       min={0}
                       max={100}
                       defaultValue={valve.moistureTarget ?? ""}
-                      placeholder={`${globalMoistureTarget} (global)`}
+                      placeholder={t("{target} (global)", { target: globalMoistureTarget })}
                       className="mt-1"
                       aria-label={`Moisture target for ${valve.name}`}
                     />
@@ -217,7 +225,7 @@ export default function Sprinklers({
                     {actionData != null &&
                       "valveId" in actionData &&
                       actionData.valveId === valve.id && (
-                        <SavedFlash token={actionData} />
+                        <SavedFlash token={actionData}>{t("Saved")}</SavedFlash>
                       )}
                   </div>
                 </Form>
@@ -228,12 +236,14 @@ export default function Sprinklers({
       </Card>
 
       <Card
-        title="Unused valves"
-        description="Gardena reports every valve port as healthy whether or not anything is wired to it, so switch off the ones you do not use. They stay out of schedules and the dashboard."
+        title={t("Unused valves")}
+        description={t(
+          "Gardena reports every valve port as healthy whether or not anything is wired to it, so switch off the ones you do not use. They stay out of schedules and the dashboard."
+        )}
       >
         {disabled.length === 0 ? (
           <p className="text-sm text-stone-500 dark:text-stone-400">
-            Every valve is in use.
+            {t("Every valve is in use.")}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -248,7 +258,7 @@ export default function Sprinklers({
                     <Badge tone="neutral">{valve.location}</Badge>
                   )}
                 </span>
-                <DisableToggle valve={valve} onToggle={onToggle} />
+                <DisableToggle valve={valve} onToggle={onToggle} t={t} />
               </li>
             ))}
           </ul>
