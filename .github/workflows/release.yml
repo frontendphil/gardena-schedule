@@ -1,16 +1,84 @@
 name: Release add-on
 
-# Publishes the images that gardena-scheduler/config.yaml points at. Home Assistant appends
-# `:{version}` to the image name, so the tag published here has to match the
-# `version:` field in that file exactly — the job below reads it from there
-# rather than trusting the git tag, so the two cannot drift apart.
+# Publishes the images that gardena-scheduler/config.yaml points at, and tags
+# the commit that produced them.
+#
+# Home Assistant reads config.yaml from the default branch and appends
+# `:{version}` to the image name, so the moment a version bump lands on main it
+# offers that update — whether or not an image exists to pull. Tagging by hand
+# left 1.8.0 published with nothing behind it. This runs on every push to main
+# and closes that gap automatically.
+#
+# The ordering is the point: images are pushed *first*, and the tag is created
+# only after every architecture has succeeded. The tag therefore means "these
+# images exist", which is exactly what it failed to mean before.
+#
+# It cannot be split into "tag on main" + "build on tag": events created with
+# the default GITHUB_TOKEN do not start new workflow runs, so a tag pushed by a
+# workflow would silently never build. Both halves live here for that reason.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      republish:
+        description: "Publish again even if this version is already tagged"
+        type: boolean
+        default: false
+
+# One release at a time. Two merges in quick succession would otherwise race to
+# push the same image tag, and `cancel-in-progress` would be worse: a half-done
+# release is the state this workflow exists to prevent.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      publish: ${{ steps.decide.outputs.publish }}
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Decide whether this version still needs publishing
+        id: decide
+        run: |
+          version=$(grep -E '^version:' gardena-scheduler/config.yaml | sed 's/version:[[:space:]]*//' | tr -d '"')
+          test -n "$version" || { echo "gardena-scheduler/config.yaml has no version"; exit 1; }
+
+          # The remote is the authority: a tag that exists only on someone's
+          # laptop is exactly the situation that broke 1.9.0.
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            tagged=true
+          else
+            tagged=false
+          fi
+
+          if [ "$tagged" = "false" ] || [ "${{ inputs.republish }}" = "true" ]; then
+            publish=true
+          else
+            publish=false
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+          if [ "$publish" = "true" ]; then
+            echo "::notice::Publishing $version (already tagged: $tagged)"
+          else
+            echo "::notice::v$version is already released; nothing to do."
+          fi
+
   publish:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
+
     # Each architecture builds on its own native runner. Building arm64 on an
     # amd64 runner means QEMU, and emulating V8 crashes with
     # "qemu: uncaught target signal 4 (Illegal instruction)" partway through the
@@ -21,6 +89,9 @@ jobs:
       packages: write
 
     strategy:
+      # Never leave one architecture published and the other not: the tag must
+      # only be created when both exist.
+      fail-fast: true
       matrix:
         include:
           - arch: aarch64
@@ -33,24 +104,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - name: Read add-on version
-        id: addon
-        run: |
-          version=$(grep -E '^version:' gardena-scheduler/config.yaml | sed 's/version:[[:space:]]*//' | tr -d '"')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Publishing version $version for ${{ matrix.arch }}"
-
       # No setup-qemu-action: each runner builds its own architecture natively.
-      - uses: docker/setup-buildx-action@v4.2.0
+      - uses: docker/setup-buildx-action@v3.12.0
 
-      - uses: docker/login-action@v4.6.0
+      - uses: docker/login-action@v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@v6.19.2
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -59,9 +123,40 @@ jobs:
           # app's Settings page, so a stale deploy is visible rather than
           # something you have to infer from behaviour.
           build-args: |
-            BUILD_VERSION=${{ steps.addon.outputs.version }}
+            BUILD_VERSION=${{ needs.check.outputs.version }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/gardena-schedule-${{ matrix.arch }}:${{ steps.addon.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/gardena-schedule-${{ matrix.arch }}:${{ needs.check.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/gardena-schedule-${{ matrix.arch }}:latest
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  tag:
+    needs: [check, publish]
+    # Redundant with the skip that a skipped `publish` already propagates, but
+    # stated anyway: "the tag only exists if the images do" is the guarantee
+    # this whole workflow is built around, and it should not rest on an
+    # implicit rule.
+    if: needs.check.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Tag the released commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          # `republish` reaches here with the tag already present, which is not
+          # an error — the images were rebuilt for a tag that already points at
+          # this commit.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::notice::v$VERSION already tagged; images were republished."
+            exit 0
+          fi
+
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/v$VERSION" \
+            -f sha="$GITHUB_SHA" >/dev/null
+
+          echo "::notice::Tagged v$VERSION at $GITHUB_SHA"

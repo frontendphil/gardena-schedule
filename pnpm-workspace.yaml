@@ -1,10 +1,23 @@
+# Which dependencies may run build scripts on install.
+#
+# `allowBuilds` replaced `onlyBuiltDependencies` in pnpm 11 — the old key is
+# removed and silently does nothing, so this map is the only thing that decides.
+# Anything not listed is denied.
 allowBuilds:
-  better-sqlite3: true
+  # Must stay false. better-sqlite3 ships prebuilt binaries for every platform
+  # this runs on — including linuxmusl-arm64 for Alpine on a Home Assistant
+  # Green — and its loader picks them up with no build step.
+  #
+  # It has no install script of its own, so approving it does not run something
+  # it wrote: pnpm sees the package's `binding.gyp` and runs `node-gyp rebuild`
+  # implicitly. That needs Python and a C toolchain, which the Node Alpine image
+  # does not carry, and the production image build dies at `pnpm install`.
+  #
+  # `pnpm approve-builds` offers this package like any other and a bulk approval
+  # will flip it back. It is written as an explicit `false` rather than left out
+  # so that turning it on is a visible edit rather than a missing line.
+  better-sqlite3: false
   esbuild: true
-# better-sqlite3 is deliberately absent: it ships prebuilt binaries for every
-# platform we run on (including linuxmusl-arm64 for Alpine on a Home Assistant
-# Green), and its loader prefers those over a node-gyp build. Allowing its build
-# script would force a compile that needs Python and a toolchain in the image.
-onlyBuiltDependencies:
-  - '@tailwindcss/oxide'
-  - esbuild
+  # No install script today, so this is a no-op — kept because the build has
+  # always been intended to be allowed if a future version needs it.
+  '@tailwindcss/oxide': true

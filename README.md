@@ -107,17 +107,33 @@ the upgrade itself is a version bump rather than a behaviour change.
 
 ## Releasing
 
-The manifest version is the source of truth — the release workflow reads it from
-`config.yaml`, not the git tag, so the image tag and add-on version cannot drift.
-**Bumping the manifest is what makes Home Assistant offer an update**; tagging
-alone does nothing.
+The manifest version is the source of truth, and releasing is automatic:
 
-1. Bump `version:` in `gardena-scheduler/config.yaml` and commit.
-2. Tag it to match (`git tag v1.9.0`) and push the tag.
-3. Add the entry to `gardena-scheduler/CHANGELOG.md` by hand — Home Assistant
+1. Bump `version:` in `gardena-scheduler/config.yaml`.
+2. Add the entry to `gardena-scheduler/CHANGELOG.md` by hand — Home Assistant
    reads that file and never sees GitHub Releases.
-4. `release.yml` builds `aarch64` and `amd64` on native runners — emulating arm64
-   crashes V8 under QEMU — and pushes both to GHCR.
+3. Merge to main. That is the whole process.
+
+On every push to main, `release.yml` compares `config.yaml` against the tags on
+the remote. If that version is already tagged it stops; otherwise it builds
+`aarch64` and `amd64` on native runners — emulating arm64 crashes V8 under QEMU
+— pushes both to GHCR, and only then creates `v{version}`.
+
+**The order is deliberate.** Home Assistant reads `config.yaml` from the default
+branch and appends `:{version}` to the image name, so it offers an update the
+moment a bump lands, whether or not an image exists to pull. Tagging by hand
+left 1.8.0 published with nothing behind it. Because the tag is created last, a
+tag now means "these images exist" — and a failed build leaves the version
+untagged, so the next push retries it.
+
+This cannot be split into "tag on main" and "build on tag": events created with
+the default `GITHUB_TOKEN` do not start workflow runs, so a tag pushed by a
+workflow would never trigger a build.
+
+To rebuild a version that is already tagged, run the workflow manually with
+**Republish** ticked. There is no need to push tags by hand, and doing so is
+actively harmful: a tag pushed ahead of its release makes the workflow consider
+that version done and skip building it.
 
 Running as a plain container works too (`docker run -p 3000:3000 --env-file .env
 -v gardena-data:/data …`), but not on a serverless host: the scheduler needs a
