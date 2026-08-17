@@ -38,7 +38,7 @@ for (const file of sources) {
  * The dictionary is imported rather than parsed out of the file. An earlier
  * version fell back to a regex when the import failed, and the two disagreed by
  * one key — a check that can quietly produce the wrong answer is worse than no
- * check, so this fails loudly instead. Node 24 strips the types natively.
+ * check, so this fails loudly instead. Node strips the types natively.
  */
 let de
 try {

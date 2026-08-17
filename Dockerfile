@@ -1,6 +1,11 @@
 # Node has a stable global WebSocket, so the Gardena socket needs no `ws` dependency.
-FROM node:24.19.0-alpine AS base
-RUN corepack enable
+FROM node:26.7.0-alpine AS base
+# Corepack was unbundled from Node and is no longer in the official images as of
+# Node 25, so it has to be installed before it can be enabled. It is still worth
+# using rather than `npm install -g pnpm@x`: it takes the version from the
+# `packageManager` field, so the image cannot drift from what CI and local
+# development resolve.
+RUN npm install -g corepack && corepack enable
 WORKDIR /app
 
 FROM base AS development-dependencies-env
