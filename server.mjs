@@ -173,19 +173,30 @@ app.use((request, response, next) => {
     request.url = `${prefix}${request.url}`
     request.originalUrl = `${prefix}${request.originalUrl}`
 
-    // A redirect from an action is a plain Response; React Router does not
-    // prefix its Location, so a form post would send the browser to the Home
-    // Assistant root instead of back into the add-on.
+    /**
+     * Redirects already carry the prefix: React Router applies `basename` to a
+     * redirect returned from an action. They need exactly one repair.
+     *
+     * A redirect to the app root comes out as `<prefix>` or `<prefix>?query`,
+     * with no trailing slash — and Home Assistant routes
+     * `/api/hassio_ingress/{token}/{path}`, which does not match without it. So
+     * "Measure", "Refresh" and the master switch all 404'd when pressed from the
+     * dashboard, because that is the one page whose redirect target is the root.
+     *
+     * This only ever inserts the missing slash. An earlier version prefixed the
+     * whole value, which double-prefixed this same case.
+     */
     const setHeader = response.setHeader.bind(response)
 
     response.setHeader = (name, value) => {
-      if (
-        name.toLowerCase() === "location" &&
-        typeof value === "string" &&
-        value.startsWith("/") &&
-        !value.startsWith(`${prefix}/`)
-      ) {
-        return setHeader(name, `${prefix}${value}`)
+      if (name.toLowerCase() !== "location" || typeof value !== "string") {
+        return setHeader(name, value)
+      }
+
+      if (value === prefix) return setHeader(name, `${prefix}/`)
+
+      if (value.startsWith(`${prefix}?`) || value.startsWith(`${prefix}#`)) {
+        return setHeader(name, `${prefix}/${value.slice(prefix.length)}`)
       }
 
       return setHeader(name, value)

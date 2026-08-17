@@ -1,13 +1,12 @@
 import { useEffect } from "react"
 import {
-  Form,
   NavLink,
   Outlet,
   href,
+  useFetcher,
   useLocation,
   useNavigation,
   useRevalidator,
-  useSubmit,
 } from "react-router"
 
 import { Badge, Toggle, cx } from "../components/ui"
@@ -51,7 +50,9 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
   const { masterEnabled, connected, activeRun } = loaderData
   const location = useLocation()
   const revalidator = useRevalidator()
-  const submit = useSubmit()
+  // A fetcher keeps the switch on whatever page it was pressed from; a
+  // redirecting action would be re-prefixed under Ingress.
+  const masterFetcher = useFetcher()
   const navigation = useNavigation()
 
   // Background revalidation must not flash the bar — only real user actions.
@@ -118,19 +119,20 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
           )}
         </div>
 
-        <Form
+        <masterFetcher.Form
           method="post"
           action={href("/master")}
           className="flex items-center gap-3"
         >
-          <input type="hidden" name="returnTo" value={location.pathname} />
           <span className="text-sm font-medium">All schedules</span>
           <Toggle
             name="enabled"
             checked={masterEnabled}
-            onChange={(event) => submit(event.currentTarget.form)}
+            onChange={(event) =>
+              masterFetcher.submit(event.currentTarget.form)
+            }
           />
-        </Form>
+        </masterFetcher.Form>
       </header>
 
       {!masterEnabled && (

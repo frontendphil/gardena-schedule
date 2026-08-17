@@ -4,6 +4,15 @@ Home Assistant shows this file on the add-on's page and when an update is
 available. Entries are added automatically from GitHub release notes — see
 "Publishing a new version" in the repository README.
 
+## 1.7.1
+
+- Fixed **Measure**, **Refresh** and the **All schedules** switch returning a 404
+  when pressed from the dashboard. Each redirected back to the app root, and
+  under Ingress that redirect ended up carrying the path prefix twice. They now
+  stay on the page instead of redirecting at all.
+- "Measure" explains that the sensor declines to measure again straight after a
+  previous reading, rather than reporting it as a failure.
+
 ## 1.7.0
 
 - The moisture gate no longer trusts a reading forever. Past a configurable age

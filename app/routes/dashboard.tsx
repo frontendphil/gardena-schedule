@@ -1,13 +1,6 @@
-import { Form, Link, href, useLocation, useSearchParams } from "react-router"
+import { Link, href, useFetcher } from "react-router"
 
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  cx,
-  useIsPending,
-} from "../components/ui"
+import { Badge, Button, Card, EmptyState, cx } from "../components/ui"
 import { db } from "../db"
 import {
   scheduleSteps as scheduleStepsTable,
@@ -150,7 +143,7 @@ const STEP_LABELS: Record<RunStepStatus, { label: string; tone: "neutral" | "act
 const MEASURE_OUTCOMES: Record<string, string> = {
   refreshed: "The sensor took a new reading.",
   "timed-out":
-    "Gardena accepted the request but no new reading arrived within 30 seconds.",
+    "Gardena accepted the request, but no new reading arrived within 30 seconds. The sensor declines to measure again straight after a previous reading — wait a minute and try again.",
   failed:
     "Could not reach Gardena's app API — check the account email and password on Settings.",
   "not-configured":
@@ -195,11 +188,15 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
     recentRuns,
   } = loaderData
 
-  const location = useLocation()
-  const refreshing = useIsPending("refresh")
-  const measuring = useIsPending("measure")
-  const [searchParams] = useSearchParams()
-  const measured = searchParams.get("measured")
+  // Fetchers rather than navigations: these actions stay on this page, and a
+  // redirect would be re-prefixed by Ingress. Both revalidate the loader on
+  // completion, so the reading updates without any extra plumbing.
+  const measureFetcher = useFetcher<{ outcome: string }>()
+  const refreshFetcher = useFetcher()
+
+  const measuring = measureFetcher.state !== "idle"
+  const refreshing = refreshFetcher.state !== "idle"
+  const measured = measureFetcher.data?.outcome ?? null
 
   const dateFormat = new Intl.DateTimeFormat("en-GB", {
     timeZone: timezone,
@@ -236,8 +233,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
           actions={
             <div className="flex items-center gap-1">
               {canForceMeasurement && (
-                <Form method="post" action={href("/measure")}>
-                  <input type="hidden" name="intent" value="measure" />
+                <measureFetcher.Form method="post" action={href("/measure")}>
                   <Button
                     type="submit"
                     variant="ghost"
@@ -247,12 +243,9 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                   >
                     Measure
                   </Button>
-                </Form>
+                </measureFetcher.Form>
               )}
-              <Form method="post" action={href("/refresh")}>
-              {/* Named so `useIsPending` can light up this button alone. */}
-              <input type="hidden" name="intent" value="refresh" />
-              <input type="hidden" name="returnTo" value={location.pathname} />
+              <refreshFetcher.Form method="post" action={href("/refresh")}>
               <Button
                 type="submit"
                 variant="ghost"
@@ -262,7 +255,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
               >
                 Refresh
               </Button>
-              </Form>
+              </refreshFetcher.Form>
             </div>
           }
         >

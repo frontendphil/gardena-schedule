@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm"
-import { href, redirect } from "react-router"
 
 import { db } from "../db"
 import { settings } from "../db/schema"
@@ -11,7 +10,8 @@ import { requirePage } from "./guard"
  * Requirement 4: the global on/off switch for every schedule.
  *
  * A resource route rather than a page action so the switch can live in the header
- * on every screen and return the user to where they were.
+ * on every screen. Posted with a fetcher and returns data rather than
+ * redirecting — see the note in `measure.ts`.
  */
 export const action = async ({ request }: Route.ActionArgs) => {
   await requirePage()
@@ -28,13 +28,5 @@ export const action = async ({ request }: Route.ActionArgs) => {
   // current valve's duration.
   if (!enabled) await abortActiveRun()
 
-  const returnTo = formData.get("returnTo")
-
-  return redirect(
-    typeof returnTo === "string" && returnTo.startsWith("/") && !returnTo.startsWith("//")
-      ? returnTo
-      : href("/")
-  )
+  return { ok: true as const }
 }
-
-export const loader = () => redirect(href("/"))

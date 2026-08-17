@@ -1,29 +1,24 @@
-import { eq } from "drizzle-orm"
-import { href, redirect } from "react-router"
-
 import { db } from "../db"
 import { settings as settingsTable } from "../db/schema"
 import { hasAccountCredentials } from "../gardena/account"
 import { refreshSoilReading } from "../gardena/measure"
-import type { Route } from "./+types/measure"
 import { requirePage } from "./guard"
 
 /**
  * Forces the soil sensor to measure now.
  *
- * Needs the optional Husqvarna account credentials: this goes through Gardena's
- * own app API, because the public one has no command for it. Doubles as the way
- * to check those credentials actually work — the outcome comes back in the URL
- * so the dashboard can say what happened rather than failing silently at 06:00.
+ * Returns data rather than redirecting, and the dashboard posts here with a
+ * fetcher. That is not a style preference: under Home Assistant Ingress the app
+ * is mounted at `/api/hassio_ingress/<token>`, React Router applies that
+ * basename when it builds a redirect, and the client applies it *again* when it
+ * follows one — so "go back to the dashboard" landed on
+ * `<prefix>/<prefix>` and Home Assistant answered 404. An action that stays put
+ * has no redirect to mangle.
  */
-export const action = async ({ request }: Route.ActionArgs) => {
+export const action = async () => {
   await requirePage()
 
-  const back = href("/")
-
-  if (!hasAccountCredentials()) {
-    return redirect(`${back}?measured=not-configured`)
-  }
+  if (!hasAccountCredentials()) return { outcome: "not-configured" as const }
 
   const current = db.select().from(settingsTable).get()!
 
@@ -33,7 +28,5 @@ export const action = async ({ request }: Route.ActionArgs) => {
     force: true,
   })
 
-  return redirect(`${back}?measured=${outcome}`)
+  return { outcome }
 }
-
-export const loader = () => redirect(href("/"))
