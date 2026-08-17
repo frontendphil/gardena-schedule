@@ -83,10 +83,16 @@ const check = (name, ok, detail = "") => {
 await waitForServer()
 
 // ---------------------------------------------------------------- document
-const documentResponse = await ingress("/")
+// `/dashboard` rather than `/`: the root is a redirect now, so its body is empty
+// and every assertion below it would pass vacuously.
+const documentResponse = await ingress("/dashboard")
 const document = await documentResponse.text()
 
-check("GET / is routed", documentResponse.status < 500, `status ${documentResponse.status}`)
+check(
+  "GET /dashboard is routed",
+  documentResponse.status < 500,
+  `status ${documentResponse.status}`
+)
 
 check(
   "basename is the ingress prefix, with no trailing slash",
@@ -136,10 +142,54 @@ if (manifestUrl != null) {
 }
 
 // ---------------------------------------------------------------- sub-routes
-for (const path of ["/schedules", "/sprinklers", "/settings"]) {
+for (const path of ["/dashboard", "/schedules", "/sprinklers", "/settings"]) {
   const response = await ingress(path)
   check(`GET ${path} is routed`, response.status < 500, `status ${response.status}`)
 }
+
+// ------------------------------------------------------------------ nav links
+// React Router renders a link to the root as the bare basename — `useHref` does
+// `pathname === "/" ? basename : joinPaths(...)`. Home Assistant only routes
+// `/api/hassio_ingress/{token}/{path}`, so that form 404s upstream and never
+// reaches this server: the "Dashboard" tab 404'd from every other page. The
+// dashboard has its own path now so nothing links to the root, and this asserts
+// no link ever regresses to the bare prefix.
+const settingsPage = await (await ingress("/settings")).text()
+
+const links = [
+  ...new Set(
+    [...settingsPage.matchAll(/<a[^>]*\shref="([^"]*)"/g)].map((m) => m[1])
+  ),
+].filter((value) => value.startsWith(PREFIX))
+
+check("the settings page renders nav links", links.length >= 4, `${links.length} links`)
+
+const bare = links.filter((value) => value === PREFIX)
+
+check(
+  "no link points at the bare prefix",
+  bare.length === 0,
+  bare.length === 0
+    ? `${links.length} links, all with a path`
+    : "Home Assistant 404s this before it reaches the add-on"
+)
+
+check(
+  "the Dashboard tab links to /dashboard",
+  links.includes(`${PREFIX}/dashboard`),
+  links.join(" ")
+)
+
+// The root is how Ingress opens the add-on, so it must still land somewhere.
+const rootRedirect = await ingress("/")
+
+check(
+  "the root redirects to the dashboard",
+  rootRedirect.status >= 300 &&
+    rootRedirect.status < 400 &&
+    rootRedirect.headers.get("location") === `${PREFIX}/dashboard`,
+  `${rootRedirect.status} -> ${rootRedirect.headers.get("location")}`
+)
 
 const missing = await ingress("/definitely-not-a-route")
 check("an unknown path still 404s", missing.status === 404, `status ${missing.status}`)

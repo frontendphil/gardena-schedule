@@ -5,6 +5,14 @@ available, and it never sees GitHub Releases — so an entry added here by hand 
 the only thing that tells you what changed. See "Releasing" in the repository
 README.
 
+## 1.9.1
+
+- **Fixed the Dashboard tab returning a "404: Not found".** Home Assistant
+  serves the add-on under a per-session address, and the link back to the
+  dashboard was the one link that did not carry a path within it — so it worked
+  from the dashboard itself and failed from every other page. The dashboard now
+  has an address of its own.
+
 ## 1.9.0
 
 - **Schedules can now have their own moisture goal.** If a schedule covers one

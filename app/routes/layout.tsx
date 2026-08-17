@@ -48,7 +48,7 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
 }
 
 const NAV = [
-  { to: href("/"), label: "Dashboard" },
+  { to: href("/dashboard"), label: "Dashboard" },
   { to: href("/schedules"), label: "Schedules" },
   { to: href("/sprinklers"), label: "Sprinklers" },
   { to: href("/settings"), label: "Settings" },
@@ -171,7 +171,10 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
           <NavLink
             key={to}
             to={to}
-            end={to === href("/")}
+            // No `end`: prefix matching is what keeps "Schedules" highlighted
+            // while editing one at /schedules/:scheduleId. It was previously
+            // needed only to stop the root path matching everything, and the
+            // root is no longer a tab.
             className={({ isActive }) =>
               cx(
                 "flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors",
