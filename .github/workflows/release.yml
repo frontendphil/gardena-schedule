@@ -31,7 +31,7 @@ jobs:
             runner: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4.4.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Read add-on version
         id: addon
