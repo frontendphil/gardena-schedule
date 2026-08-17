@@ -1,5 +1,5 @@
 # Node has a stable global WebSocket, so the Gardena socket needs no `ws` dependency.
-FROM node:24-alpine AS base
+FROM node:24.19.0-alpine AS base
 RUN corepack enable
 WORKDIR /app
 
