@@ -1,3 +1,6 @@
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
 # better-sqlite3 is deliberately absent: it ships prebuilt binaries for every
 # platform we run on (including linuxmusl-arm64 for Alpine on a Home Assistant
 # Green), and its loader prefers those over a node-gyp build. Allowing its build
