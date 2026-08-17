@@ -43,6 +43,13 @@
       "when": 1786951438800,
       "tag": "0005_fair_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786964643684,
+      "tag": "0006_dark_black_knight",
+      "breakpoints": true
     }
   ]
 }

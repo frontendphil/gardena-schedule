@@ -5,6 +5,20 @@ available, and it never sees GitHub Releases — so an entry added here by hand 
 the only thing that tells you what changed. See "Releasing" in the repository
 README.
 
+## 1.9.0
+
+- **Schedules can now have their own moisture goal.** If a schedule covers one
+  area — a shaded bed, the pots, the lawn — give it a target and everything in
+  it waters to that number instead of the global one. The schedules list shows
+  the goal, and Settings lists every schedule that has one.
+- Targets now cascade, most specific first: **a sprinkler's own target, then its
+  schedule's goal, then the global target.** A sprinkler you have given its own
+  number therefore keeps it and ignores the schedule goal. The schedule editor
+  names those sprinklers, so a goal that does not apply everywhere tells you
+  rather than leaving it to be discovered in the run history.
+- Existing schedules are unchanged and keep following the global target.
+- Updated to Node 26 and React Router 8.
+
 ## 1.8.0
 
 - The interface is now available in **German** as well as English. It follows

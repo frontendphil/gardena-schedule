@@ -90,6 +90,10 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
       // Switched-off sprinklers are never watered, but the step stays visible
       // here so it can be found and removed rather than silently doing nothing.
       disabled: valvesById.get(step.valveId)?.hidden ?? false,
+      // A sprinkler's own target beats the schedule's, so this is where a
+      // schedule-wide goal quietly fails to apply. Surfaced per step rather
+      // than left to be discovered in the run history.
+      ownMoistureTarget: valvesById.get(step.valveId)?.moistureTarget ?? null,
     }))
 
   const used = new Set(steps.map((step) => step.valveId))
@@ -105,6 +109,8 @@ export const loader = async ({ params }: Route.LoaderArgs) => {
   return {
     schedule,
     steps,
+    globalMoistureTarget: settings.globalMoistureTarget,
+    sensorGateEnabled: settings.sensorGateEnabled,
     today: getLocalDateKey(new Date(), settings.timezone),
     available: valveRows
       .filter(
@@ -171,6 +177,16 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
 
       const anchorDate = String(formData.get("anchorDate") ?? "").trim()
 
+      // Empty means "inherit the global target", so it has to stay distinct
+      // from 0 — which is a legitimate goal meaning "always water".
+      const rawTarget = String(formData.get("moistureTarget") ?? "").trim()
+      const parsedTarget = Number(rawTarget)
+
+      const moistureTarget =
+        rawTarget === "" || Number.isNaN(parsedTarget)
+          ? null
+          : Math.min(100, Math.max(0, Math.round(parsedTarget)))
+
       db.update(schedulesTable)
         .set({
           name: name === "" ? "Untitled" : name,
@@ -179,6 +195,7 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
           daysOfWeek: recurrence === "weekly" ? days : ALL_DAYS,
           intervalDays,
           anchorDate: /^\d{4}-\d{2}-\d{2}$/.test(anchorDate) ? anchorDate : null,
+          moistureTarget,
           enabled: formData.get("enabled") === "on",
         })
         .where(eq(schedulesTable.id, scheduleId))
@@ -502,7 +519,20 @@ function ScheduleEditor({
   loaderData,
   actionData,
 }: Pick<Route.ComponentProps, "loaderData" | "actionData">) {
-  const { schedule, steps, available, today } = loaderData
+  const {
+    schedule,
+    steps,
+    available,
+    today,
+    globalMoistureTarget,
+    sensorGateEnabled,
+  } = loaderData
+
+  // Named from the steps rather than the valve table so the order matches the
+  // list below it.
+  const overridingSteps = steps
+    .filter((step) => step.ownMoistureTarget != null && !step.disabled)
+    .map((step) => step.name)
   const submit = useSubmit()
   const reorderFetcher = useFetcher()
   const t = useT()
@@ -728,6 +758,50 @@ function ScheduleEditor({
                 />
               </Field>
             </div>
+          )}
+
+          <Field
+            label={t("Moisture goal for this schedule")}
+            hint={
+              sensorGateEnabled
+                ? t(
+                    "Everything in this schedule waters only below this. Leave empty to follow the global target."
+                  )
+                : t(
+                    "Moisture gating is off in Settings, so this has no effect yet."
+                  )
+            }
+          >
+            <div className="mt-1 flex items-center gap-2">
+              <Input
+                type="number"
+                name="moistureTarget"
+                min={0}
+                max={100}
+                className="w-32"
+                defaultValue={schedule.moistureTarget ?? ""}
+                placeholder={t("{target} (global)", {
+                  target: globalMoistureTarget,
+                })}
+              />
+              <span className="text-sm text-stone-500 dark:text-stone-400">
+                %
+              </span>
+            </div>
+          </Field>
+
+          {/*
+            The one way this feature disappoints: a sprinkler with its own
+            target ignores the schedule's goal. Naming them is cheaper than
+            letting someone infer it from a run that skipped.
+          */}
+          {schedule.moistureTarget != null && overridingSteps.length > 0 && (
+            <p className="text-sm text-amber-700 dark:text-amber-500">
+              {t(
+                "{names} keep their own target and ignore this goal. Clear it on the Sprinklers page to bring them in line.",
+                { names: overridingSteps.join(", ") }
+              )}
+            </p>
           )}
 
           <div className="flex items-center justify-between gap-4 border-t border-stone-200 pt-4 dark:border-stone-800">

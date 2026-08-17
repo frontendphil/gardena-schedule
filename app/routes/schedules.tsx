@@ -59,6 +59,7 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
         startTime: schedule.startTime,
         enabled: schedule.enabled,
         recurrence: formatRecurrence(schedule, t),
+        moistureTarget: schedule.moistureTarget,
         stepCount: plan.steps.length,
         totalMinutes: plan.totalMinutes,
         endTime: formatZonedTime(plan.endsAt, settings.timezone),
@@ -275,6 +276,10 @@ export default function Schedules({ loaderData, actionData }: Route.ComponentPro
                           count: schedule.stepCount,
                           minutes: schedule.totalMinutes,
                         })}
+                    {schedule.moistureTarget != null &&
+                      t(" · waters below {target}%", {
+                        target: schedule.moistureTarget,
+                      })}
                   </p>
                 </div>
 

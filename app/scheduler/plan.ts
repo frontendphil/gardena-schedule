@@ -243,13 +243,31 @@ export const buildPlan = (
 }
 
 /**
- * The moisture gate. A valve's own target wins over the global one, which is
- * requirements 5 and 6 in a single expression.
+ * Which moisture target applies to one sprinkler in one schedule.
+ *
+ * Three levels, most specific first: the sprinkler's own override, then the
+ * schedule's shared goal, then the global setting. That ordering keeps a
+ * schedule useful as an "area" — set one goal and everything in it follows —
+ * without silently discarding an override someone set deliberately on a single
+ * sprinkler.
+ *
+ * The consequence is worth stating: setting a schedule goal does *not* move a
+ * sprinkler that already has its own number. The schedule editor flags those,
+ * because a goal that silently fails to apply is the whole failure mode here.
+ *
+ * Takes an object rather than positional arguments: two of the three are
+ * interchangeable-looking numbers, and swapping them would compile.
  */
-export const resolveMoistureTarget = (
-  valve: Pick<ValveRow, "moistureTarget">,
+export const resolveMoistureTarget = ({
+  valve,
+  scheduleTarget,
+  globalTarget,
+}: {
+  valve: Pick<ValveRow, "moistureTarget">
+  /** Null when the schedule inherits the global target. */
+  scheduleTarget: number | null
   globalTarget: number
-) => valve.moistureTarget ?? globalTarget
+}) => valve.moistureTarget ?? scheduleTarget ?? globalTarget
 
 /** Why the gate let a sprinkler run, or held it back. Recorded per step. */
 export type MoistureDecision =
@@ -267,6 +285,7 @@ export type MoistureDecision =
  */
 export const decideMoisture = ({
   valve,
+  scheduleTarget,
   globalTarget,
   sensorGateEnabled,
   reading,
@@ -274,6 +293,8 @@ export const decideMoisture = ({
   maxReadingAgeMinutes,
 }: {
   valve: Pick<ValveRow, "moistureTarget">
+  /** Null when the schedule inherits the global target. */
+  scheduleTarget: number | null
   globalTarget: number
   sensorGateEnabled: boolean
   reading: number | null
@@ -288,7 +309,7 @@ export const decideMoisture = ({
     return { skip: false, reason: "stale-reading" }
   }
 
-  return reading >= resolveMoistureTarget(valve, globalTarget)
+  return reading >= resolveMoistureTarget({ valve, scheduleTarget, globalTarget })
     ? { skip: true, reason: "wet" }
     : { skip: false, reason: "dry" }
 }

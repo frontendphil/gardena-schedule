@@ -17,6 +17,7 @@ import { translatorFor } from "../i18n/server"
 import { db } from "../db"
 import {
   locations as locationsTable,
+  schedules as schedulesTable,
   settings as settingsTable,
   valves as valvesTable,
 } from "../db/schema"
@@ -68,9 +69,24 @@ export const loader = async () => {
       target: valve.moistureTarget!,
     }))
 
+  // The global number is only the floor of a three-level cascade, so listing
+  // both kinds of deviation next to it keeps this page honest about what is
+  // actually in force.
+  const scheduleTargets = db
+    .select()
+    .from(schedulesTable)
+    .all()
+    .filter((schedule) => schedule.moistureTarget != null)
+    .map((schedule) => ({
+      id: schedule.id,
+      name: schedule.name,
+      target: schedule.moistureTarget!,
+    }))
+
   return {
     settings,
     overrides,
+    scheduleTargets,
     sensors,
     connection: {
       connected: connection.connected,
@@ -139,6 +155,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
     settings,
     sensors,
     overrides,
+    scheduleTargets,
     connection,
     requests,
     version,
@@ -197,7 +214,9 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label={t("Global moisture target")}
-              hint={t("Water only while the reading is below this.")}
+              hint={t(
+                "Water only while the reading is below this. Schedules and single sprinklers can set their own."
+              )}
             >
               <div className="mt-1 flex items-center gap-2">
                 <Input
@@ -281,18 +300,40 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
             </p>
           </div>
 
-          {overrides.length > 0 && (
-            <div className="rounded-lg bg-stone-100 px-4 py-3 text-sm dark:bg-stone-800/50">
-              <p className="font-medium">
-                {t("Sprinklers with their own target")}
-              </p>
-              <ul className="mt-1 space-y-0.5 text-stone-600 dark:text-stone-400">
-                {overrides.map((override) => (
-                  <li key={override.name}>
-                    {override.name} — {override.target}%
-                  </li>
-                ))}
-              </ul>
+          {(scheduleTargets.length > 0 || overrides.length > 0) && (
+            <div className="space-y-3 rounded-lg bg-stone-100 px-4 py-3 text-sm dark:bg-stone-800/50">
+              {scheduleTargets.length > 0 && (
+                <div>
+                  <p className="font-medium">
+                    {t("Schedules with their own goal")}
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-stone-600 dark:text-stone-400">
+                    {scheduleTargets.map((schedule) => (
+                      <li key={schedule.id}>
+                        {schedule.name} — {schedule.target}%
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {overrides.length > 0 && (
+                <div>
+                  <p className="font-medium">
+                    {t("Sprinklers with their own target")}
+                  </p>
+                  <p className="text-xs text-stone-500 dark:text-stone-400">
+                    {t("These win over both the global target and any schedule goal.")}
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-stone-600 dark:text-stone-400">
+                    {overrides.map((override) => (
+                      <li key={override.name}>
+                        {override.name} — {override.target}%
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 

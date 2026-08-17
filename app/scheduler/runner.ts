@@ -14,7 +14,13 @@ import {
 import { startValve, stopValve } from "../gardena/client"
 import { readingAgeMinutes, refreshSoilReading } from "../gardena/measure"
 import { getSensor, getValves } from "../gardena/store"
-import { buildPlan, decideMoisture, displayName, isDue } from "./plan"
+import {
+  buildPlan,
+  decideMoisture,
+  displayName,
+  isDue,
+  resolveMoistureTarget,
+} from "./plan"
 
 const TICK_MS = 30_000
 
@@ -225,10 +231,17 @@ const executeRun = async (
             return null
           }
 
-          const target = valveRow.moistureTarget ?? current.globalMoistureTarget
+          // Re-read with the schedule, so editing its goal mid-run takes effect
+          // from the next group — the same way the master switch does.
+          const target = resolveMoistureTarget({
+            valve: valveRow,
+            scheduleTarget: freshSchedule.moistureTarget,
+            globalTarget: current.globalMoistureTarget,
+          })
 
           const decision = decideMoisture({
             valve: valveRow,
+            scheduleTarget: freshSchedule.moistureTarget,
             globalTarget: current.globalMoistureTarget,
             sensorGateEnabled: current.sensorGateEnabled,
             reading,
