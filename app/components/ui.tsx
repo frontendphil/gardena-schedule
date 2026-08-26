@@ -183,24 +183,22 @@ export const SavedFlash = ({
   )
 }
 
+/**
+ * `text-base sm:text-sm` rather than a flat `text-sm`: iOS zooms the page in
+ * when a focused field's text is under 16px and never zooms back out, which on
+ * a phone leaves the rest of the form off-screen. It belongs here rather than on
+ * individual fields — a caller passing `text-base` loses to this class anyway,
+ * since the stylesheet orders font sizes by scale and not by call site.
+ */
+const fieldStyles =
+  "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-base outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 sm:text-sm dark:border-stone-700 dark:bg-stone-950"
+
 export const Input = ({ className, ...props }: ComponentProps<"input">) => (
-  <input
-    {...props}
-    className={cx(
-      "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-stone-700 dark:bg-stone-950",
-      className
-    )}
-  />
+  <input {...props} className={cx(fieldStyles, className)} />
 )
 
 export const Select = ({ className, ...props }: ComponentProps<"select">) => (
-  <select
-    {...props}
-    className={cx(
-      "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-stone-700 dark:bg-stone-950",
-      className
-    )}
-  />
+  <select {...props} className={cx(fieldStyles, className)} />
 )
 
 export const Field = ({
