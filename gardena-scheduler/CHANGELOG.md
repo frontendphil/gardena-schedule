@@ -5,6 +5,30 @@ available, and it never sees GitHub Releases — so an entry added here by hand 
 the only thing that tells you what changed. See "Releasing" in the repository
 README.
 
+## 1.10.0
+
+- **A schedule can now be started by hand.** Every row of the schedules list has
+  a *Run now* button that waters it immediately, whether or not it is due today —
+  for a dry spell, or to check the plumbing after moving a sprinkler. The row
+  shows which schedule is watering while it runs.
+- It waters the schedule exactly as written — same sprinklers, same order, same
+  durations — and takes no advice: neither the schedule's own on/off switch nor
+  the moisture gate holds it back. Pressing the button is a clearer instruction
+  than a switch that decides whether the schedule fires by itself, or a sensor
+  guessing whether it needs to. The history still records what the soil read at
+  the time. Only the master switch overrules it, and that is also how a run
+  started by hand is stopped early.
+- Only one run ever waters at a time, so pressing it while something else is
+  running is refused and names what is running. So is pressing it with all
+  schedules switched off — the run would otherwise start and skip every
+  sprinkler, which reads like a fault.
+- Starting a schedule by hand does **not** use up its scheduled start: the
+  schedule still fires at its usual time. The one exception is a manual run that
+  is still watering when that time comes round, which would otherwise water the
+  same sprinklers twice in a row.
+- The run history marks these runs *started by hand*, so a run at an unusual
+  hour explains itself.
+
 ## 1.9.1
 
 - **Fixed the Dashboard tab returning a "404: Not found".** Home Assistant

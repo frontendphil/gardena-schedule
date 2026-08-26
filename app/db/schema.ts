@@ -138,14 +138,28 @@ export const RUN_STATUS = [
 ] as const
 export type RunStatus = (typeof RUN_STATUS)[number]
 
-/** Execution history — one row per schedule per day it actually fired. */
+export const RUN_TRIGGER = ["schedule", "manual"] as const
+export type RunTrigger = (typeof RUN_TRIGGER)[number]
+
+/** Execution history — one row per time a schedule actually watered. */
 export const runs = sqliteTable("runs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   scheduleId: integer("schedule_id")
     .notNull()
     .references(() => schedules.id, { onDelete: "cascade" }),
-  /** Local calendar day `YYYY-MM-DD`; together with scheduleId it makes a run unique. */
+  /**
+   * Local calendar day `YYYY-MM-DD` the run belongs to. The scheduler fires a
+   * schedule at most once per day, so for an automatic run this is also what
+   * makes it unique; a run started by hand carries the day it was pressed on
+   * and may sit alongside the automatic one.
+   */
   scheduledDate: text("scheduled_date").notNull(),
+  /**
+   * Whether the scheduler started this run or somebody pressed *Run now*. A
+   * manual run ignores the schedule's own on/off switch and does not stand in
+   * for the day's automatic run — see `hasCoveringRun`.
+   */
+  trigger: text("trigger", { enum: RUN_TRIGGER }).notNull().default("schedule"),
   startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
   finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
   status: text("status", { enum: RUN_STATUS }).notNull(),

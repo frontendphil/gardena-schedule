@@ -9,6 +9,7 @@ import {
   settings as settingsTable,
   valves as valvesTable,
   type RunStepStatus,
+  type RunTrigger,
   type Schedule,
 } from "../db/schema"
 import { startValve, stopValve } from "../gardena/client"
@@ -18,9 +19,12 @@ import {
   buildPlan,
   decideMoisture,
   displayName,
+  getStartInstant,
+  hasCoveringRun,
   isDue,
   resolveMoistureTarget,
 } from "./plan"
+import { getLocalDateKey } from "./time"
 
 const TICK_MS = 30_000
 
@@ -45,6 +49,7 @@ type ActiveRun = {
   runId: number
   scheduleId: number
   scheduleName: string
+  trigger: RunTrigger
   abort: AbortController
 }
 
@@ -55,7 +60,12 @@ let running = false
 export const getActiveRun = () =>
   active == null
     ? null
-    : { runId: active.runId, scheduleId: active.scheduleId, scheduleName: active.scheduleName }
+    : {
+        runId: active.runId,
+        scheduleId: active.scheduleId,
+        scheduleName: active.scheduleName,
+        trigger: active.trigger,
+      }
 
 const getSettings = () => db.select().from(settingsTable).get()!
 
@@ -92,10 +102,17 @@ const finishStep = (
  * Steps execute sequentially. A skipped step simply advances to the next one
  * immediately, which is what makes the run "shift earlier" — there is no
  * replanning, the remaining valves just start sooner.
+ *
+ * `trigger` says who asked. It is recorded on the run, and a manual run ignores
+ * both the schedule's own on/off switch and the moisture gate: somebody pressed
+ * *Run now* on this schedule, which is a clearer instruction than a switch that
+ * decides whether it fires by itself or a sensor guessing whether it needs to.
+ * The master switch still stops it — that one means "no water".
  */
 const executeRun = async (
   schedule: Schedule,
   scheduledDate: string,
+  trigger: RunTrigger,
   signal: AbortSignal
 ) => {
   const settings = getSettings()
@@ -118,6 +135,7 @@ const executeRun = async (
     .values({
       scheduleId: schedule.id,
       scheduledDate,
+      trigger,
       startedAt: new Date(),
       status: "running",
     })
@@ -189,7 +207,10 @@ const executeRun = async (
       .where(eq(schedules.id, schedule.id))
       .get()
 
-    if (freshSchedule == null || !freshSchedule.enabled) {
+    if (
+      freshSchedule == null ||
+      (trigger === "schedule" && !freshSchedule.enabled)
+    ) {
       for (const { runStep } of rows) {
         finishStep(runStep.id, "skipped_schedule_off", "Schedule was disabled")
       }
@@ -201,7 +222,11 @@ const executeRun = async (
     // When account credentials are configured the sensor is asked to measure
     // now if its last reading has aged out; otherwise the gate falls back to
     // treating a stale reading as unknown, which waters.
-    if (current.sensorGateEnabled) {
+    //
+    // A manual run waters either way, so asking the sensor to measure would
+    // spend an API request on a decision that has already been made. Whatever
+    // reading is already in hand is still recorded on the steps.
+    if (current.sensorGateEnabled && trigger === "schedule") {
       await refreshSoilReading({
         sensorId: current.sensorId,
         maxAgeMinutes: current.maxReadingAgeMinutes,
@@ -249,7 +274,11 @@ const executeRun = async (
             maxReadingAgeMinutes: current.maxReadingAgeMinutes,
           })
 
-          if (decision.skip) {
+          // The gate only holds back the scheduler. Pressing *Run now* is a
+          // person saying this bed needs water now, which beats a sensor
+          // reading — the history records what the soil said and that it was
+          // watered anyway.
+          if (decision.skip && trigger === "schedule") {
             db.update(runSteps)
               .set({
                 status: "skipped_moisture",
@@ -272,8 +301,11 @@ const executeRun = async (
               startedAt: new Date(),
               moistureReading: reading,
               moistureTarget: target,
-              detail:
-                decision.reason === "stale-reading"
+              detail: decision.skip
+                ? `Started by hand: watered although soil was at ${reading}%, target ${target}%${
+                    readingAge == null ? "" : ` (measured ${readingAge} min ago)`
+                  }`
+                : decision.reason === "stale-reading"
                   ? `Watered anyway: sensor reading was ${readingAge} min old`
                   : null,
             })
@@ -331,14 +363,61 @@ const executeRun = async (
     .run()
 }
 
-const hasRunOn = (scheduleId: number, scheduledDate: string) =>
-  db
-    .select({ id: runs.id })
-    .from(runs)
-    .where(
-      and(eq(runs.scheduleId, scheduleId), eq(runs.scheduledDate, scheduledDate))
-    )
-    .get() != null
+/**
+ * Whether `schedule` still owes today an automatic run, given what has already
+ * happened. `hasCoveringRun` holds the reasoning; this only fetches the rows.
+ */
+const alreadyCovered = (
+  schedule: Schedule,
+  scheduledDate: string,
+  timeZone: string,
+  now: Date
+) =>
+  hasCoveringRun(
+    db
+      .select({ trigger: runs.trigger, finishedAt: runs.finishedAt })
+      .from(runs)
+      .where(
+        and(
+          eq(runs.scheduleId, schedule.id),
+          eq(runs.scheduledDate, scheduledDate)
+        )
+      )
+      .all(),
+    getStartInstant(schedule, scheduledDate, timeZone),
+    now
+  )
+
+/**
+ * Sets up the bookkeeping around one run: nothing else may water while it is in
+ * flight, and `active` has to be cleared however it ends.
+ *
+ * The promise resolves when the watering does, which for a real schedule is many
+ * minutes away — the tick awaits it, `startManualRun` deliberately does not.
+ */
+const runSchedule = async (
+  schedule: Schedule,
+  scheduledDate: string,
+  trigger: RunTrigger
+) => {
+  const abort = new AbortController()
+
+  active = {
+    runId: -1,
+    scheduleId: schedule.id,
+    scheduleName: schedule.name,
+    trigger,
+    abort,
+  }
+
+  try {
+    await executeRun(schedule, scheduledDate, trigger, abort.signal)
+  } catch (error) {
+    console.error(`[scheduler] run of "${schedule.name}" failed`, error)
+  } finally {
+    active = null
+  }
+}
 
 /**
  * One scheduler tick. Purely local — it never calls the Gardena API, so running
@@ -360,30 +439,99 @@ export const tick = async (now = new Date()) => {
 
   for (const schedule of candidates) {
     const check = isDue(schedule, now, settings.timezone, (date) =>
-      hasRunOn(schedule.id, date)
+      alreadyCovered(schedule, date, settings.timezone, now)
     )
 
     if (!check.due) continue
 
-    const abort = new AbortController()
-
-    active = {
-      runId: -1,
-      scheduleId: schedule.id,
-      scheduleName: schedule.name,
-      abort,
-    }
-
-    try {
-      await executeRun(schedule, check.scheduledDate, abort.signal)
-    } catch (error) {
-      console.error(`[scheduler] run of "${schedule.name}" failed`, error)
-    } finally {
-      active = null
-    }
+    await runSchedule(schedule, check.scheduledDate, "schedule")
 
     return
   }
+}
+
+/** Why a run could not be started by hand. Each one is reported to the user. */
+export type ManualRunRefusal =
+  | "scheduler-disabled"
+  | "master-off"
+  | "busy"
+  | "not-found"
+  | "nothing-to-water"
+
+export type ManualRunOutcome =
+  | { started: true }
+  | { started: false; reason: ManualRunRefusal; scheduleName?: string }
+
+/**
+ * Starts a schedule immediately, outside its own timetable.
+ *
+ * Returns as soon as the run has been accepted rather than when the watering
+ * finishes — a run lasts as long as the valves it opens, and no request may hang
+ * that long. Progress shows up in the run history and in the header badge.
+ *
+ * Every refusal is a real one and named, because the alternative is a button
+ * that quietly does nothing: the same conditions that stop the scheduler stop
+ * this too, except the schedule's own on/off switch and the moisture gate, which
+ * pressing the button overrules.
+ */
+export const startManualRun = (scheduleId: number): ManualRunOutcome => {
+  if (schedulerDisabled()) {
+    return { started: false, reason: "scheduler-disabled" }
+  }
+
+  // Checked before anything else touches `active`: this is synchronous up to the
+  // point the run is registered, so two presses cannot both get through.
+  if (active != null) {
+    return {
+      started: false,
+      reason: "busy",
+      scheduleName: active.scheduleName,
+    }
+  }
+
+  const settings = getSettings()
+
+  // The run would open with every step skipped as "all off", which reads like a
+  // bug. Say what is actually in the way instead.
+  if (!settings.masterEnabled) return { started: false, reason: "master-off" }
+
+  const schedule = db
+    .select()
+    .from(schedules)
+    .where(eq(schedules.id, scheduleId))
+    .get()
+
+  if (schedule == null) return { started: false, reason: "not-found" }
+
+  const scheduledDate = getLocalDateKey(new Date(), settings.timezone)
+
+  const steps = db
+    .select()
+    .from(scheduleSteps)
+    .where(eq(scheduleSteps.scheduleId, scheduleId))
+    .all()
+
+  const valvesById = new Map(
+    db.select().from(valvesTable).all().map((row) => [row.id, row])
+  )
+
+  // `executeRun` returns without recording anything when the plan is empty, so
+  // an empty schedule would leave no trace at all of the button press.
+  const plan = buildPlan(
+    schedule,
+    steps,
+    valvesById,
+    scheduledDate,
+    settings.timezone
+  )
+
+  if (plan.steps.length === 0) {
+    return { started: false, reason: "nothing-to-water" }
+  }
+
+  void runSchedule(schedule, scheduledDate, "manual")
+
+  return { started: true }
 }
 
 /**
