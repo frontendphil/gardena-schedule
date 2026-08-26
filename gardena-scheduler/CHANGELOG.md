@@ -5,6 +5,16 @@ available, and it never sees GitHub Releases — so an entry added here by hand 
 the only thing that tells you what changed. See "Releasing" in the repository
 README.
 
+## 1.10.1
+
+- **Editing a schedule on a phone works properly.** The row for each sprinkler
+  now stacks instead of squeezing the six-column desktop layout onto a narrow
+  screen, which had left the duration box a few millimetres wide.
+- **Sprinklers can be reordered on a touchscreen**, with an arrow on each row.
+  Dragging is a mouse-only feature of browsers and never worked on a phone, so
+  the order simply could not be changed there.
+- Text fields no longer make iOS zoom the page in when you tap them.
+
 ## 1.10.0
 
 - **A schedule can now be started by hand.** Every row of the schedules list has

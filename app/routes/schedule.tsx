@@ -1,4 +1,4 @@
-import { and, eq, gt, lt, sql } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { useMemo, useState } from "react"
 import { Form, href, redirect, useFetcher, useSubmit } from "react-router"
 
@@ -440,32 +440,36 @@ export const action = async ({ request, params }: Route.ActionArgs) => {
     const stepId = Number(formData.get("stepId"))
     const direction = formData.get("direction") === "up" ? "up" : "down"
 
-    const step = db
+    const ordered = db
       .select()
       .from(scheduleStepsTable)
-      .where(eq(scheduleStepsTable.id, stepId))
-      .get()
+      .where(eq(scheduleStepsTable.scheduleId, scheduleId))
+      .orderBy(scheduleStepsTable.position)
+      .all()
 
-    if (step == null) return null
+    const index = ordered.findIndex((candidate) => candidate.id === stepId)
 
-    // Swap with the adjacent step rather than rewriting the whole list.
-    const neighbour = db
-      .select()
-      .from(scheduleStepsTable)
-      .where(
-        and(
-          eq(scheduleStepsTable.scheduleId, scheduleId),
-          direction === "up"
-            ? lt(scheduleStepsTable.position, step.position)
-            : gt(scheduleStepsTable.position, step.position)
-        )
-      )
-      .orderBy(
-        direction === "up"
-          ? sql`${scheduleStepsTable.position} desc`
-          : scheduleStepsTable.position
-      )
-      .get()
+    if (index === -1) return null
+
+    const step = ordered[index]
+
+    const hidden = new Set(
+      db
+        .select()
+        .from(valvesTable)
+        .all()
+        .filter((valve) => valve.hidden)
+        .map((valve) => valve.id)
+    )
+
+    // Swap with the nearest neighbour rather than rewriting the whole list —
+    // skipping switched-off sprinklers, which the list does not show. Swapping
+    // with one of those would move the step and look like nothing happened.
+    const neighbour = (
+      direction === "up"
+        ? ordered.slice(0, index).reverse()
+        : ordered.slice(index + 1)
+    ).find((candidate) => !hidden.has(candidate.valveId))
 
     if (neighbour == null) return null
 
@@ -868,7 +872,13 @@ function ScheduleEditor({
                   // Fixed columns rather than flex: the trailing control differs
                   // between the first row and the rest, and with flex that pushed
                   // every duration box to a different x.
-                  "grid grid-cols-[1.25rem_8rem_1fr] items-center gap-x-3 gap-y-2 border p-3 transition-colors",
+                  //
+                  // A phone gets two columns and stacks instead. The six-column
+                  // layout used to apply at every width, which put the duration
+                  // box in the 1.25rem drag-handle column — a number input a few
+                  // millimetres wide. Every child below is placed explicitly so
+                  // the stack cannot be re-flowed by accident.
+                  "grid grid-cols-[auto_1fr] items-center gap-y-2 border p-3 transition-colors sm:gap-x-3",
                   "sm:grid-cols-[1.25rem_8rem_1fr_7rem_10rem_2rem]",
                   // A parallel group reads as one block: tinted, joined, and
                   // carrying a solid accent rail down its left edge.
@@ -893,16 +903,20 @@ function ScheduleEditor({
                   onDragEnd={persistOrder}
                   aria-hidden
                   title="Drag to reorder"
-                  className="cursor-grab select-none px-1 text-stone-400 active:cursor-grabbing dark:text-stone-500"
+                  // Hidden on touch widths: HTML5 drag-and-drop does not fire on
+                  // a touchscreen at all, so the handle was an invitation to an
+                  // interaction that could not happen. The arrows below replace
+                  // it there.
+                  className="hidden cursor-grab select-none px-1 text-stone-400 active:cursor-grabbing sm:block dark:text-stone-500"
                 >
                   ⠿
                 </span>
 
-                <span className="whitespace-nowrap font-mono text-sm tabular-nums text-stone-500 dark:text-stone-400">
+                <span className="col-start-2 row-start-2 whitespace-nowrap font-mono text-sm tabular-nums text-stone-500 sm:col-start-auto sm:row-start-auto dark:text-stone-400">
                   {step.startsAt}–{step.endsAt}
                 </span>
 
-                <span className="flex min-w-0 items-center gap-2">
+                <span className="col-start-2 row-start-1 flex min-w-0 items-center gap-2 sm:col-start-auto sm:row-start-auto">
                   <span className="truncate font-medium">{step.name}</span>
                   {step.location != null && (
                     <span className="shrink-0 rounded-full bg-stone-200 px-2 py-0.5 text-xs text-stone-600 dark:bg-stone-700 dark:text-stone-300">
@@ -916,68 +930,111 @@ function ScheduleEditor({
                   )}
                 </span>
 
-                <Form method="post" className="flex items-center gap-1 justify-self-start">
-                  <input type="hidden" name="intent" value="set-duration" />
-                  <input type="hidden" name="stepId" value={step.id} />
-                  <Input
-                    type="number"
-                    name="durationMinutes"
-                    min={1}
-                    max={600}
-                    value={step.minutes}
-                    onChange={(event) =>
-                      setDurations((current) => ({
-                        ...current,
-                        [step.id]: Number(event.target.value),
-                      }))
-                    }
-                    onBlur={(event) => submit(event.currentTarget.form)}
-                    className="w-20"
-                    aria-label={`Duration for ${step.name} in minutes`}
-                  />
-                  <span className="text-sm text-stone-500 dark:text-stone-400">
-                    {t("min")}
-                  </span>
-                </Form>
-
-                <div className="flex items-center justify-end gap-2">
-                  {index === 0 ? (
-                    <span className="text-xs text-stone-400 dark:text-stone-500">
-                      {t("starts the run")}
+                {/*
+                  One control row on a phone; `sm:contents` dissolves this back
+                  into the six-column grid on a wider screen, so the desktop
+                  layout is unchanged.
+                */}
+                <div className="col-start-2 row-start-3 flex flex-wrap items-center gap-x-3 gap-y-2 sm:contents">
+                  <Form method="post" className="flex items-center gap-1 justify-self-start">
+                    <input type="hidden" name="intent" value="set-duration" />
+                    <input type="hidden" name="stepId" value={step.id} />
+                    <Input
+                      type="number"
+                      name="durationMinutes"
+                      min={1}
+                      max={600}
+                      value={step.minutes}
+                      onChange={(event) =>
+                        setDurations((current) => ({
+                          ...current,
+                          [step.id]: Number(event.target.value),
+                        }))
+                      }
+                      onBlur={(event) => submit(event.currentTarget.form)}
+                      className="w-24 sm:w-20"
+                      inputMode="numeric"
+                      aria-label={`Duration for ${step.name} in minutes`}
+                    />
+                    <span className="text-sm text-stone-500 dark:text-stone-400">
+                      {t("min")}
                     </span>
-                  ) : (
-                    <Form method="post" className="flex items-center gap-2">
-                      <input
-                        type="hidden"
-                        name="intent"
-                        value="toggle-parallel"
-                      />
-                      <input type="hidden" name="stepId" value={step.id} />
-                      <span className="text-xs text-stone-500 dark:text-stone-400">
-                        {t("With previous")}
+                  </Form>
+
+                  <div className="flex items-center justify-end gap-2">
+                    {index === 0 ? (
+                      <span className="text-xs text-stone-400 dark:text-stone-500">
+                        {t("starts the run")}
                       </span>
-                      <Toggle
-                        name="startsWithPrevious"
-                        checked={step.startsWithPrevious}
-                        onChange={(event) => submit(event.currentTarget.form!)}
-                        aria-label={`Run ${step.name} at the same time as the sprinkler above`}
-                      />
+                    ) : (
+                      <Form method="post" className="flex items-center gap-2">
+                        <input
+                          type="hidden"
+                          name="intent"
+                          value="toggle-parallel"
+                        />
+                        <input type="hidden" name="stepId" value={step.id} />
+                        <span className="text-xs text-stone-500 dark:text-stone-400">
+                          {t("With previous")}
+                        </span>
+                        <Toggle
+                          name="startsWithPrevious"
+                          checked={step.startsWithPrevious}
+                          onChange={(event) => submit(event.currentTarget.form!)}
+                          aria-label={`Run ${step.name} at the same time as the sprinkler above`}
+                        />
+                      </Form>
+                    )}
+
+                  </div>
+
+                  {/*
+                    Reordering for touch, where dragging cannot work. Plain form
+                    posts of the `move-step` intent rather than a touch version of
+                    the drag: one tap moves one place, which on a phone beats
+                    dragging a row through a scrolling list.
+                  */}
+                  <div className="ml-auto flex items-center gap-1 sm:hidden">
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="move-step" />
+                      <input type="hidden" name="stepId" value={step.id} />
+                      <input type="hidden" name="direction" value="up" />
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        disabled={index === 0}
+                        aria-label={`Move ${step.name} earlier`}
+                      >
+                        ↑
+                      </Button>
                     </Form>
-                  )}
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="move-step" />
+                      <input type="hidden" name="stepId" value={step.id} />
+                      <input type="hidden" name="direction" value="down" />
+                      <Button
+                        type="submit"
+                        variant="ghost"
+                        disabled={index === timeline.length - 1}
+                        aria-label={`Move ${step.name} later`}
+                      >
+                        ↓
+                      </Button>
+                    </Form>
+                  </div>
 
+                  <Form method="post" className="justify-self-end">
+                    <input type="hidden" name="intent" value="remove-step" />
+                    <input type="hidden" name="stepId" value={step.id} />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      aria-label={`Remove ${step.name}`}
+                    >
+                      ✕
+                    </Button>
+                  </Form>
                 </div>
-
-                <Form method="post" className="justify-self-end">
-                  <input type="hidden" name="intent" value="remove-step" />
-                  <input type="hidden" name="stepId" value={step.id} />
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    aria-label={`Remove ${step.name}`}
-                  >
-                    ✕
-                  </Button>
-                </Form>
               </li>
               )
             })}

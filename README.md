@@ -39,7 +39,7 @@ process has spent.
 
 | | |
 |---|---|
-| **Schedules** | An ordered list of sprinklers with a duration each. Drag to reorder; clock times update live. Repeats on chosen weekdays, or every *N* days from an anchor date — a two-day cycle cannot be expressed as a weekday set. |
+| **Schedules** | An ordered list of sprinklers with a duration each. Drag to reorder, or move a step with the arrows on a touchscreen, where dragging cannot work; clock times update live. Repeats on chosen weekdays, or every *N* days from an anchor date — a two-day cycle cannot be expressed as a weekday set. |
 | **Parallel sprinklers** | A sprinkler can start *with the previous* one; the group lasts as long as its longest member. A controller holds at most **two** of its valves open at once, so the editor refuses a third and names the clash. Valves on different controllers count separately, so 2 + 2 is fine. |
 | **Today at a glance** | Every schedule running today on a shared clock, with a warning when two overlap — only one run executes at a time, so the second is skipped rather than queued. |
 | **Sprinklers, not controllers** | The `DEVICE` / `VALVE_SET` layer is never surfaced. A flat alphabetical list you can rename and switch off; order matters only inside a schedule. |
