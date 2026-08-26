@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm"
-import { Form, Link, href, redirect, useSubmit } from "react-router"
+import { Form, Link, href, redirect, useFetcher, useSubmit } from "react-router"
 
-import { Badge, Button, Card, EmptyState, Input, Toggle } from "../components/ui"
+import { Badge, Button, Card, EmptyState, Input, Toggle, cx } from "../components/ui"
 import { useT } from "../i18n"
 import { translatorFor } from "../i18n/server"
 import { db } from "../db"
@@ -19,6 +19,12 @@ import {
   formatRecurrence,
   getNextOccurrence,
 } from "../scheduler/plan"
+import {
+  getActiveRun,
+  schedulerDisabled,
+  startManualRun,
+  type ManualRunOutcome,
+} from "../scheduler/runner"
 import {
   formatZonedTime,
   getLocalDateKey,
@@ -167,6 +173,12 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
     conflicts: activeToday
       .filter((row) => conflicting.has(row.id))
       .map((row) => row.name),
+    // What would stop *Run now* from doing anything, so each button can say so
+    // before it is pressed. The layout revalidates every 15 seconds, so this
+    // does not sit stale for long — and the action checks again regardless.
+    masterEnabled: settings.masterEnabled,
+    schedulerOff: schedulerDisabled(),
+    activeRun: getActiveRun(),
   }
 }
 
@@ -184,6 +196,12 @@ export const action = async ({ request }: Route.ActionArgs) => {
       .run()
 
     return null
+  }
+
+  if (intent === "run-now") {
+    // Returns immediately: `startManualRun` accepts or refuses the run, it does
+    // not wait for the watering to finish.
+    return { run: startManualRun(Number(formData.get("scheduleId"))) }
   }
 
   if (intent === "create") {
@@ -205,10 +223,184 @@ export const action = async ({ request }: Route.ActionArgs) => {
   return null
 }
 
-export default function Schedules({ loaderData, actionData }: Route.ComponentProps) {
-  const { schedules, timeline, conflicts } = loaderData
+type ScheduleSummary = Route.ComponentProps["loaderData"]["schedules"][number]
+
+type Refusal = Extract<ManualRunOutcome, { started: false }>
+
+const refusalText = (outcome: Refusal, t: ReturnType<typeof useT>) => {
+  switch (outcome.reason) {
+    case "scheduler-disabled":
+      return t("This instance never opens a valve, so it cannot start a run.")
+    case "master-off":
+      return t("All schedules are switched off. Turn them on to water.")
+    case "busy":
+      return t(
+        "“{name}” is watering right now. Only one run happens at a time — wait for it to finish.",
+        { name: outcome.scheduleName ?? "" }
+      )
+    case "not-found":
+      return t("This schedule no longer exists.")
+    case "nothing-to-water":
+      return t(
+        "Nothing to water: this schedule has no sprinklers, or all of them are switched off."
+      )
+  }
+}
+
+/**
+ * One schedule in the list, with its own fetcher so pressing *Run now* on one
+ * row neither spins nor answers for the others.
+ */
+function ScheduleRow({
+  schedule,
+  watering,
+  blocked,
+}: {
+  schedule: ScheduleSummary
+  /** This schedule is the run currently watering. */
+  watering: boolean
+  /** Why *Run now* is unavailable, or null when it can be pressed. */
+  blocked: Refusal | null
+}) {
   const submit = useSubmit()
+  const runFetcher = useFetcher<{ run: ManualRunOutcome }>()
   const t = useT()
+
+  const outcome = runFetcher.data?.run ?? null
+
+  // Once the badge says it is watering, repeating that in a sentence adds
+  // nothing — so the acknowledgement only survives for a run that is already
+  // over, which is exactly the case where the badge cannot say it.
+  const message =
+    outcome == null || (outcome.started && watering)
+      ? null
+      : outcome.started
+        ? {
+            tone: "good" as const,
+            text: t(
+              "Watering started. The dashboard shows each sprinkler as it runs."
+            ),
+          }
+        : { tone: "warn" as const, text: refusalText(outcome, t) }
+
+  return (
+    <li className="py-3 first:pt-0 last:pb-0">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <Link
+            to={href("/schedules/:scheduleId", {
+              scheduleId: String(schedule.id),
+            })}
+            className="font-medium hover:underline"
+          >
+            {schedule.name}
+          </Link>
+          <p className="mt-0.5 text-sm text-stone-500 dark:text-stone-400">
+            {schedule.startTime}–{schedule.endTime} · {schedule.recurrence}
+          </p>
+          <p className="text-xs text-stone-500 dark:text-stone-400">
+            {schedule.stepCount === 0
+              ? t("No sprinklers yet")
+              : t("{count} sprinklers · {minutes} min total", {
+                  count: schedule.stepCount,
+                  minutes: schedule.totalMinutes,
+                })}
+            {schedule.moistureTarget != null &&
+              t(" · waters below {target}%", {
+                target: schedule.moistureTarget,
+              })}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3">
+          {watering && <Badge tone="active">{t("Watering")}</Badge>}
+
+          <runFetcher.Form method="post">
+            <input type="hidden" name="intent" value="run-now" />
+            <input type="hidden" name="scheduleId" value={schedule.id} />
+            <Button
+              type="submit"
+              busy={runFetcher.state !== "idle"}
+              disabled={blocked != null}
+              className="whitespace-nowrap"
+              title={
+                blocked == null
+                  ? t(
+                      "Waters this schedule now — whether or not it is enabled, due today, or the soil is already wet."
+                    )
+                  : refusalText(blocked, t)
+              }
+              onClick={(event) => {
+                if (
+                  !confirm(
+                    t("Start “{name}” now? The sprinklers open immediately.", {
+                      name: schedule.name,
+                    })
+                  )
+                ) {
+                  event.preventDefault()
+                }
+              }}
+            >
+              {t("Run now")}
+            </Button>
+          </runFetcher.Form>
+
+          {!schedule.enabled && <Badge>{t("Off")}</Badge>}
+
+          <Form method="post">
+            <input type="hidden" name="intent" value="toggle" />
+            <input type="hidden" name="scheduleId" value={schedule.id} />
+            <Toggle
+              name="enabled"
+              checked={schedule.enabled}
+              onChange={(event) => submit(event.currentTarget.form)}
+            />
+          </Form>
+        </div>
+      </div>
+
+      {message != null && (
+        <p
+          role="status"
+          className={cx(
+            "mt-2 rounded-lg px-3 py-2 text-sm",
+            message.tone === "good"
+              ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
+              : "bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          )}
+        >
+          {message.text}
+        </p>
+      )}
+    </li>
+  )
+}
+
+export default function Schedules({ loaderData, actionData }: Route.ComponentProps) {
+  const { schedules, timeline, conflicts, masterEnabled, schedulerOff, activeRun } =
+    loaderData
+  const t = useT()
+
+  /**
+   * Every reason a run cannot start right now, in the order worth reporting:
+   * the instance-wide ones first, then this schedule having nothing to open,
+   * then somebody else already watering.
+   */
+  const blockedFor = (schedule: ScheduleSummary): Refusal | null =>
+    schedulerOff
+      ? { started: false, reason: "scheduler-disabled" }
+      : !masterEnabled
+        ? { started: false, reason: "master-off" }
+        : schedule.stepCount === 0
+          ? { started: false, reason: "nothing-to-water" }
+          : activeRun != null
+            ? {
+                started: false,
+                reason: "busy",
+                scheduleName: activeRun.scheduleName,
+              }
+            : null
 
   return (
     <>
@@ -253,53 +445,12 @@ export default function Schedules({ loaderData, actionData }: Route.ComponentPro
         ) : (
           <ul className="divide-y divide-stone-100 dark:divide-stone-800">
             {schedules.map((schedule) => (
-              <li
+              <ScheduleRow
                 key={schedule.id}
-                className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
-              >
-                <div className="min-w-0">
-                  <Link
-                    to={href("/schedules/:scheduleId", {
-                      scheduleId: String(schedule.id),
-                    })}
-                    className="font-medium hover:underline"
-                  >
-                    {schedule.name}
-                  </Link>
-                  <p className="mt-0.5 text-sm text-stone-500 dark:text-stone-400">
-                    {schedule.startTime}–{schedule.endTime} · {schedule.recurrence}
-                  </p>
-                  <p className="text-xs text-stone-500 dark:text-stone-400">
-                    {schedule.stepCount === 0
-                      ? t("No sprinklers yet")
-                      : t("{count} sprinklers · {minutes} min total", {
-                          count: schedule.stepCount,
-                          minutes: schedule.totalMinutes,
-                        })}
-                    {schedule.moistureTarget != null &&
-                      t(" · waters below {target}%", {
-                        target: schedule.moistureTarget,
-                      })}
-                  </p>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-3">
-                  {!schedule.enabled && <Badge>{t("Off")}</Badge>}
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="toggle" />
-                    <input
-                      type="hidden"
-                      name="scheduleId"
-                      value={schedule.id}
-                    />
-                    <Toggle
-                      name="enabled"
-                      checked={schedule.enabled}
-                      onChange={(event) => submit(event.currentTarget.form)}
-                    />
-                  </Form>
-                </div>
-              </li>
+                schedule={schedule}
+                watering={activeRun?.scheduleId === schedule.id}
+                blocked={blockedFor(schedule)}
+              />
             ))}
           </ul>
         )}

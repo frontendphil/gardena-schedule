@@ -47,6 +47,7 @@ export const de: Record<string, string> = {
   "No runs yet": "Noch keine Läufe",
   "Runs will appear here once a schedule fires.":
     "Läufe erscheinen hier, sobald ein Zeitplan startet.",
+  "Started by hand": "Manuell gestartet",
   "No sensor reading yet.": "Noch kein Sensorwert.",
   "Watering now: {names}": "Bewässert gerade: {names}",
   "{count} sprinklers · {minutes} min": "{count} Sprinkler · {minutes} min",
@@ -125,6 +126,22 @@ export const de: Record<string, string> = {
   "No sprinklers yet": "Noch keine Sprinkler",
   "{count} sprinklers · {minutes} min total":
     "{count} Sprinkler · {minutes} min gesamt",
+  "Run now": "Jetzt starten",
+  "Waters this schedule now — whether or not it is enabled, due today, or the soil is already wet.":
+    "Bewässert diesen Zeitplan jetzt — unabhängig davon, ob er eingeschaltet ist, heute an der Reihe wäre oder der Boden schon feucht ist.",
+  "Start “{name}” now? The sprinklers open immediately.":
+    "„{name}“ jetzt starten? Die Sprinkler öffnen sofort.",
+  "Watering started. The dashboard shows each sprinkler as it runs.":
+    "Bewässerung gestartet. In der Übersicht siehst du jeden Sprinkler, während er läuft.",
+  "“{name}” is watering right now. Only one run happens at a time — wait for it to finish.":
+    "„{name}“ bewässert gerade. Es läuft immer nur eine Bewässerung — warte, bis sie fertig ist.",
+  "All schedules are switched off. Turn them on to water.":
+    "Alle Zeitpläne sind ausgeschaltet. Schalte sie ein, um zu bewässern.",
+  "This instance never opens a valve, so it cannot start a run.":
+    "Diese Instanz öffnet kein Ventil und kann deshalb keine Bewässerung starten.",
+  "This schedule no longer exists.": "Diesen Zeitplan gibt es nicht mehr.",
+  "Nothing to water: this schedule has no sprinklers, or all of them are switched off.":
+    "Nichts zu bewässern: Dieser Zeitplan hat keine Sprinkler, oder alle sind ausgeschaltet.",
   "{names} overlap. Only one schedule runs at a time, so whichever comes second will be skipped today rather than waiting its turn. Move its start time past the end of the first.":
     "{names} überschneiden sich. Es läuft immer nur ein Zeitplan, der zweite wird heute also übersprungen statt zu warten. Verschiebe seine Startzeit hinter das Ende des ersten.",
   "{minutes} min": "{minutes} min",

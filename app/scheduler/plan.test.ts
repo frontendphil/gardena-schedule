@@ -8,6 +8,7 @@ import {
   decideMoisture,
   displayName,
   getNextOccurrence,
+  hasCoveringRun,
   isDue,
   parallelViolations,
   resolveMoistureTarget,
@@ -651,6 +652,44 @@ describe("isDue", () => {
     expect(isDue(everySecondDay, at("2026-07-17T04:00:00Z"), TZ, never).due).toBe(
       true
     )
+  })
+})
+
+describe("hasCoveringRun", () => {
+  // The 06:00 Berlin schedule used throughout, on 2026-07-15.
+  const startsAt = new Date("2026-07-15T04:00:00Z")
+  const now = new Date("2026-07-15T04:05:00Z")
+
+  const run = (
+    trigger: "schedule" | "manual",
+    finishedAt: string | null
+  ) => ({ trigger, finishedAt: finishedAt == null ? null : new Date(finishedAt) })
+
+  it("counts an automatic run whenever it happened", () => {
+    expect(hasCoveringRun([run("schedule", null)], startsAt, now)).toBe(true)
+    expect(
+      hasCoveringRun([run("schedule", "2026-07-15T04:30:00Z")], startsAt, now)
+    ).toBe(true)
+  })
+
+  it("lets the schedule still run after watering by hand earlier", () => {
+    // Started and finished at 03:00–03:30 UTC, well before the 04:00 start.
+    expect(
+      hasCoveringRun([run("manual", "2026-07-15T03:30:00Z")], startsAt, now)
+    ).toBe(false)
+  })
+
+  it("counts a manual run that was still going at the start time", () => {
+    // Pressed at 05:55 local and still watering at 06:00 — running it again
+    // straight away would water the same sprinklers twice.
+    expect(
+      hasCoveringRun([run("manual", "2026-07-15T04:20:00Z")], startsAt, now)
+    ).toBe(true)
+    expect(hasCoveringRun([run("manual", null)], startsAt, now)).toBe(true)
+  })
+
+  it("is false with no runs at all", () => {
+    expect(hasCoveringRun([], startsAt, now)).toBe(false)
   })
 })
 

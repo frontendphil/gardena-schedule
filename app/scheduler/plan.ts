@@ -1,4 +1,4 @@
-import type { Schedule, ScheduleStep, ValveRow } from "../db/schema"
+import type { RunTrigger, Schedule, ScheduleStep, ValveRow } from "../db/schema"
 import {
   ALL_DAYS,
   daysBetween,
@@ -374,6 +374,36 @@ export const isDue = (
 
   return { ...result, due: true }
 }
+
+/**
+ * Whether a day's automatic start has already been taken care of.
+ *
+ * An automatic run always counts: the scheduler fires a schedule once a day.
+ *
+ * A run started by hand only counts when it was still watering at — or began
+ * after — the schedule's start time. Pressing *Run now* at 05:55 for a 06:00
+ * schedule would otherwise water the same sprinklers twice back to back, since
+ * the second start still falls inside the grace window. Watering by hand at
+ * lunchtime, on the other hand, says nothing about tomorrow morning, and a
+ * manual run that finished well before the start time is not the run the
+ * schedule promises — so neither suppresses it. The bias is deliberate and
+ * matches the moisture gate: a doubtful case waters rather than silently
+ * skipping a day.
+ */
+export const hasCoveringRun = (
+  runsForDay: Array<{
+    trigger: RunTrigger
+    /** Null while the run is still going. */
+    finishedAt: Date | null
+  }>,
+  startsAt: Date,
+  now: Date
+) =>
+  runsForDay.some(
+    (run) =>
+      run.trigger === "schedule" ||
+      (run.finishedAt ?? now).getTime() >= startsAt.getTime()
+  )
 
 /**
  * The next instant a schedule will fire, used for the "next run" panel.

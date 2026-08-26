@@ -44,9 +44,10 @@ process has spent.
 | **Today at a glance** | Every schedule running today on a shared clock, with a warning when two overlap — only one run executes at a time, so the second is skipped rather than queued. |
 | **Sprinklers, not controllers** | The `DEVICE` / `VALVE_SET` layer is never surfaced. A flat alphabetical list you can rename and switch off; order matters only inside a schedule. |
 | **Unused valves** | Gardena reports every port as healthy whether or not anything is wired to it. Switch unused ones off and they never receive a command. Ports still carrying the default `Valve N` name start switched off. |
-| **Moisture gating** | With a soil sensor, a sprinkler is skipped when the reading is at or above its target. Three levels, most specific wins: a sprinkler's own target, then the schedule's goal, then the global one — so a schedule can stand in for an area that wants wetter or drier soil. Re-checked before every sprinkler. A reading older than the configured age counts as *unknown* and waters, so a sensor that stops reporting cannot silently suppress watering. |
+| **Moisture gating** | Applies to scheduled runs only — *Run now* waters regardless. With a soil sensor, a sprinkler is skipped when the reading is at or above its target. Three levels, most specific wins: a sprinkler's own target, then the schedule's goal, then the global one — so a schedule can stand in for an area that wants wetter or drier soil. Re-checked before every sprinkler. A reading older than the configured age counts as *unknown* and waters, so a sensor that stops reporting cannot silently suppress watering. |
 | **Forcing a measurement** | Optional. Gardena's public API cannot ask the sensor to measure; its own app API can. Supply a Husqvarna account and the app refreshes a stale reading before the gate decides, and a **Measure** button appears. Undocumented and may change; on failure the run falls back to watering. |
-| **Master switch** | One toggle stops every schedule, closing an open valve immediately. |
+| **Run now** | Start any schedule by hand straight from the list, whether or not it is due — a dry spell, or checking the plumbing after moving a sprinkler. It waters the schedule exactly as written, ignoring both that schedule's own on/off switch and the moisture gate: asking for water is a decision, not a suggestion. Only the master switch overrules it. |
+| **Master switch** | One toggle stops every schedule, closing an open valve immediately. It is also how a run started by hand is stopped early. |
 | **Run history** | What watered, what was skipped, and why — including the reading's age. |
 | **Several locations** | One WebSocket each, with sprinklers labelled by location when there is more than one. |
 | **English and German** | Follows the browser, overridable in Settings. Home Assistant translates the add-on's own options separately, from `gardena-scheduler/translations/`. |
@@ -170,6 +171,13 @@ schedule, but one at 09:00 does not water at breakfast. Runs interrupted by a
 restart are marked aborted, never resumed. Parallel groups open together and the
 run waits for the longest member; a skipped sprinkler hands over immediately, so
 the rest of the run shifts earlier.
+
+*Run now* takes the same path, so the two cannot overlap: pressing it while
+anything is watering is refused rather than queued, and the tick will not start a
+schedule while a manual run is in flight. A manual run does not stand in for the
+day's automatic one — the schedule still fires at its usual time — unless it was
+still watering when that time came round, which would otherwise water the same
+sprinklers twice inside the half-hour grace window.
 
 **Ingress** publishes the add-on under `/api/hassio_ingress/<token>/` with a
 per-session token, and Supervisor strips that prefix before forwarding — so the

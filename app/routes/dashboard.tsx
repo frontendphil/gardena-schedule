@@ -164,6 +164,9 @@ export const loader = async ({ request }: Route.LoaderArgs) => {
       scheduleName: run.scheduleName,
       startedAt: run.startedAt,
       status: run.status,
+      // A run at an unexpected hour is not a scheduling bug if somebody pressed
+      // the button, so the history has to say which it was.
+      manual: run.trigger === "manual",
       steps: run.steps.map((step) => ({
         id: step.id,
         valveName: step.valveName,
@@ -484,7 +487,10 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
             {recentRuns.map((run) => (
               <li key={run.id}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="font-medium">{run.scheduleName}</p>
+                  <p className="flex items-center gap-2 font-medium">
+                    {run.scheduleName}
+                    {run.manual && <Badge>{t("Started by hand")}</Badge>}
+                  </p>
                   <p className="text-xs text-stone-500 dark:text-stone-400">
                     {dateFormat.format(new Date(run.startedAt))}
                   </p>

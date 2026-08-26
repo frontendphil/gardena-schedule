@@ -1,0 +1,1 @@
+ALTER TABLE `runs` ADD `trigger` text DEFAULT 'schedule' NOT NULL;
