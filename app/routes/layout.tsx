@@ -177,7 +177,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
             // root is no longer a tab.
             className={({ isActive }) =>
               cx(
-                "flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors",
+                "flex-1 whitespace-nowrap rounded-md px-2 py-1.5 text-center text-sm font-medium transition-colors sm:px-3",
                 isActive
                   ? "bg-white text-stone-900 shadow-sm dark:bg-stone-800 dark:text-stone-100"
                   : "text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
