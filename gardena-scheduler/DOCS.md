@@ -4,6 +4,8 @@ Watering schedules for a GARDENA smart irrigation system, written the way you
 actually think about them: **start at 06:30, then run these sprinklers for these
 durations**. Every clock time is derived from that.
 
+![The dashboard: the soil reading, the next run, and a history of what watered and what was skipped](https://raw.githubusercontent.com/frontendphil/gardena-schedule/main/docs/screenshots/dashboard.png)
+
 ## Why this exists
 
 The Gardena API has no schedule endpoints. It reports device state and accepts
@@ -54,13 +56,46 @@ Assistant's login entirely**, and can water your garden.
 ### Schedules
 
 A schedule is a start time and an ordered list of sprinklers with a duration
-each. Drag to reorder; the clock times update as you drag. Schedules repeat
-either on chosen weekdays or **every N days** from an anchor date — a two-day
-cycle cannot be expressed as a weekday set, which is why both modes exist.
+each. Reorder by dragging, or with the arrows on each row — browsers only fire
+drag-and-drop for a mouse, so on a phone the arrows are the way. Clock times
+update as you go. Schedules repeat either on chosen weekdays or **every N days**
+from an anchor date — a two-day cycle cannot be expressed as a weekday set, which
+is why both modes exist.
+
+![The schedule editor: an ordered list of sprinklers with a duration each, and the clock times derived from them](https://raw.githubusercontent.com/frontendphil/gardena-schedule/main/docs/screenshots/editor.png)
 
 Only **one schedule runs at a time**. If a second becomes due while the first is
 still watering it is skipped for the day rather than queued, so the Schedules
 page plots everything running today on a shared clock and warns when two overlap.
+
+![Today: two schedules laid out on one clock, one of them a pair of sprinklers opening together](https://raw.githubusercontent.com/frontendphil/gardena-schedule/main/docs/screenshots/schedules.png)
+
+### Watering now
+
+Every row on the Schedules page has a **Run now** button that waters that
+schedule immediately, whether or not it is due today — for a dry spell, or to
+check the plumbing after moving a sprinkler.
+
+It waters exactly what the schedule says: same sprinklers, same order, same
+durations. It takes no advice, though — neither the schedule's own switch nor the
+moisture check holds it back, because pressing the button is a clearer
+instruction than either. The history still records what the soil read at the
+time.
+
+Starting a schedule by hand does **not** use up its scheduled start: the schedule
+still fires at its usual time. The one exception is a manual run that is still
+watering when that time comes round, which would otherwise water the same
+sprinklers twice in a row. Runs started this way are marked *started by hand* in
+the history.
+
+Only one run waters at a time, so pressing the button while anything else is
+watering is refused rather than queued, and it says what is in the way.
+
+### Stopping everything
+
+The **All schedules** switch in the header turns off every schedule at once, and
+closes a valve that is open right now rather than leaving it to run out its
+duration. It is also how a run started by hand is stopped early.
 
 ### Running sprinklers together
 
@@ -96,7 +131,8 @@ own number, which keeps it. The schedule editor names those sprinklers, so a
 goal that does not apply everywhere says so.
 
 The check runs again before **each** sprinkler, so a long schedule reacts to the
-soil as it goes.
+soil as it goes. It only ever holds back the scheduler: a run you start with
+**Run now** waters however wet the soil reads.
 
 The dashboard shows the reading's age and the sensor's battery, and warns below
 30%. A flat sensor stops reporting, and the gate would then decide on a stale
