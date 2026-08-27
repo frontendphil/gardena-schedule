@@ -5,6 +5,12 @@ available, and it never sees GitHub Releases — so an entry added here by hand 
 the only thing that tells you what changed. See "Releasing" in the repository
 README.
 
+## 1.10.2
+
+- The four tabs no longer run off the edge of a narrow screen, and on the
+  schedules list each row's _Run now_ and switch sit in the same place instead of
+  moving depending on how long the line above them is.
+
 ## 1.10.1
 
 - **Editing a schedule on a phone works properly.** The row for each sprinkler
@@ -18,7 +24,7 @@ README.
 ## 1.10.0
 
 - **A schedule can now be started by hand.** Every row of the schedules list has
-  a *Run now* button that waters it immediately, whether or not it is due today —
+  a _Run now_ button that waters it immediately, whether or not it is due today —
   for a dry spell, or to check the plumbing after moving a sprinkler. The row
   shows which schedule is watering while it runs.
 - It waters the schedule exactly as written — same sprinklers, same order, same
@@ -36,7 +42,7 @@ README.
   schedule still fires at its usual time. The one exception is a manual run that
   is still watering when that time comes round, which would otherwise water the
   same sprinklers twice in a row.
-- The run history marks these runs *started by hand*, so a run at an unusual
+- The run history marks these runs _started by hand_, so a run at an unusual
   hour explains itself.
 
 ## 1.9.1
@@ -125,7 +131,7 @@ Make sure no hidden valves are part of any execution.
 ## 1.6.0
 
 - The add-on now runs behind **Home Assistant Ingress**. It appears in the
-  sidebar as *Watering*, Home Assistant authenticates every request, and no port
+  sidebar as _Watering_, Home Assistant authenticates every request, and no port
   is exposed by default. Direct access is opt-in from the Network settings and
   bypasses that authentication.
 

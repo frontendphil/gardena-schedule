@@ -7,6 +7,11 @@ authored the way you actually think about watering — *"start at 06:30, then ru
 these sprinklers for these durations"* — and every clock time is derived from
 that.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.png">
+  <img alt="The dashboard: the soil reading, the next run, and a history of what watered and what was skipped" src="docs/screenshots/dashboard.png">
+</picture>
+
 > [!WARNING]
 > **The app has no login of its own.** As an add-on it runs behind Home Assistant
 > **Ingress**, which authenticates every request and publishes no port — that is
@@ -51,6 +56,42 @@ process has spent.
 | **Run history** | What watered, what was skipped, and why — including the reading's age. |
 | **Several locations** | One WebSocket each, with sprinklers labelled by location when there is more than one. |
 | **English and German** | Follows the browser, overridable in Settings. Home Assistant translates the add-on's own options separately, from `gardena-scheduler/translations/`. |
+
+## What it looks like
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/schedules-dark.png">
+  <img alt="Today: two schedules laid out on one clock, one of them a pair of sprinklers opening together" src="docs/screenshots/schedules.png">
+</picture>
+
+**Every schedule that runs today, on one clock.** The stacked bars are two
+sprinklers opening together; the vertical line is now. Two schedules that overlap
+are flagged right here, because only one run executes at a time — the second
+would be skipped for the day rather than queued behind the first. *Run now*
+waters a schedule immediately, whatever the timetable says.
+
+![The schedule editor: an ordered list of sprinklers with a duration each, and the clock times derived from them](docs/screenshots/editor.png)
+
+**A schedule is an ordered list of sprinklers and durations.** Nothing else is
+stored: every clock time on the page is derived, and re-derived as you drag a row
+or change a number. The tinted block with the green rail is a parallel group —
+*2 at once* — which lasts as long as its longest member.
+
+<table>
+<tr>
+<td width="45%"><img alt="The same editor on a phone" src="docs/screenshots/mobile.png"></td>
+<td>
+
+**It is usable from a phone**, which is where you actually stand when you decide
+the hedge needs another five minutes.
+
+Rows stack rather than squeezing six desktop columns onto a narrow screen, and
+each one carries arrows: browsers only fire drag-and-drop for a mouse, so
+dragging a sprinkler into place is a desktop-only way to reorder.
+
+</td>
+</tr>
+</table>
 
 ## Install
 

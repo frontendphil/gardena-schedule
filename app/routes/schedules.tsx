@@ -312,7 +312,12 @@ function ScheduleRow({
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3">
+        {/*
+          A full-width line of its own on a phone, so the controls sit in the
+          same place on every row instead of wrapping only when the line above
+          happens to be long.
+        */}
+        <div className="flex w-full shrink-0 items-center justify-end gap-3 sm:w-auto">
           {watering && <Badge tone="active">{t("Watering")}</Badge>}
 
           <runFetcher.Form method="post">
