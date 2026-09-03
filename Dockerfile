@@ -1,5 +1,5 @@
 # Node has a stable global WebSocket, so the Gardena socket needs no `ws` dependency.
-FROM node:26.7.0-alpine AS base
+FROM node:26.8.1-alpine AS base
 # Corepack was unbundled from Node and is no longer in the official images as of
 # Node 25, so it has to be installed before it can be enabled. It is still worth
 # using rather than `npm install -g pnpm@x`: it takes the version from the
