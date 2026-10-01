@@ -35,7 +35,7 @@
     "@types/node": "26.5.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
-    "drizzle-kit": "0.31.10",
+    "drizzle-kit": "0.31.11",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "8.3.1",
